@@ -86,6 +86,46 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Helper: build auth headers for FlipEdu API calls
+  function getAuthHeaders(session: any): { lms: Record<string, string>; editor: Record<string, string> } {
+    const lms: Record<string, string> = { "Accept": "application/json", "Content-Type": "application/json" };
+    const editor: Record<string, string> = { "Accept": "application/json", "Content-Type": "application/json" };
+    if (session.authToken && session.authToken !== "authenticated") {
+      lms["x-auth-token"] = session.authToken;
+      editor["x-auth-token"] = session.authToken;
+    }
+    if (session.flipCookies) {
+      editor["Cookie"] = session.flipCookies;
+      lms["Cookie"] = session.flipCookies;
+    }
+    return { lms, editor };
+  }
+
+  // Helper: try multiple FlipEdu endpoints in order, return first success
+  async function tryFlipEndpoints(
+    endpoints: Array<{ url: string; method?: string; body?: any; headers: Record<string, string> }>
+  ): Promise<{ response: Response; data: any } | null> {
+    for (const ep of endpoints) {
+      try {
+        const opts: RequestInit = {
+          method: ep.method || "GET",
+          headers: ep.headers,
+          redirect: 'follow',
+        };
+        if (ep.body !== undefined) opts.body = JSON.stringify(ep.body);
+        const r = await fetch(ep.url, opts);
+        console.log(`[FLIP] ${ep.method || "GET"} ${ep.url} → ${r.status}`);
+        if (r.ok) {
+          const data = await r.json().catch(() => ({}));
+          return { response: r, data };
+        }
+      } catch (err) {
+        console.log(`[FLIP] ${ep.url} failed:`, err);
+      }
+    }
+    return null;
+  }
+
   app.use("/api", (req, res, next) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
@@ -356,38 +396,21 @@ export async function registerRoutes(
       const cached = getCached(cacheKey);
       if (cached) return res.json(cached);
 
-      const authToken = req.session.authToken;
-      const lmsHeaders: Record<string, string> = {
-        "Accept": "application/json",
-      };
-      if (authToken && authToken !== "authenticated") {
-        lmsHeaders["x-auth-token"] = authToken;
-      }
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: "https://lms.flipedu.net/api/branch/shadowing-paper/classifys/all", headers: lms },
+        { url: "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys/all", headers: editor },
+        { url: "https://dev.mstr.flipedu.net/api/branch/shadowing-paper/classifys/all", headers: lms },
+      ]);
 
-      let flipResponse = await fetch(
-        "https://lms.flipedu.net/api/branch/shadowing-paper/classifys/all",
-        { headers: lmsHeaders }
-      );
-      console.log(`[DEBUG] LMS categories list: ${flipResponse.status}`);
-
-      if (!flipResponse.ok) {
-        flipResponse = await fetch(
-          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys/all",
-          {
-            headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
-          }
-        );
-        console.log(`[DEBUG] Editor categories list fallback: ${flipResponse.status}`);
-      }
-
-      if (!flipResponse.ok) {
+      if (!result) {
         const stale = apiCache.get(cacheKey);
         if (stale) return res.json(stale.data);
-        return res.status(flipResponse.status).json({ message: "카테고리를 불러올 수 없습니다." });
+        return res.status(500).json({ message: "카테고리를 불러올 수 없습니다." });
       }
-      const data = await flipResponse.json();
-      setCache(cacheKey, data);
-      res.json(data);
+
+      setCache(cacheKey, result.data);
+      res.json(result.data);
     } catch {
       res.status(500).json({ message: "카테고리 조회 중 오류가 발생했습니다." });
     }
@@ -576,21 +599,19 @@ export async function registerRoutes(
       const classifyNo = req.query.classifyNo as string;
       const pageNum = Math.max(0, parseInt(String(req.query.page || "0"), 10) || 0);
       const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
-      let url = `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-papers?page=${pageNum}&size=${sizeNum}`;
-      if (classifyNo && !isNaN(Number(classifyNo))) {
-        url += `&classifyNo=${classifyNo}`;
-      }
-      const flipResponse = await fetch(url, {
-        headers: {
-          "Accept": "application/json",
-          "Cookie": req.session.flipCookies || "",
-        },
-      });
-      if (!flipResponse.ok) {
-        return res.status(flipResponse.status).json({ message: "학습지를 불러올 수 없습니다." });
-      }
-      const data = await flipResponse.json();
-      res.json(data);
+      
+      const { lms, editor } = getAuthHeaders(req.session);
+      let url = `?page=${pageNum}&size=${sizeNum}`;
+      if (classifyNo && !isNaN(Number(classifyNo))) url += `&classifyNo=${classifyNo}`;
+
+      const result = await tryFlipEndpoints([
+        { url: `https://lms.flipedu.net/api/branch/shadowing-papers${url}`, headers: lms },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-papers${url}`, headers: editor },
+        { url: `https://dev.mstr.flipedu.net/api/branch/shadowing-papers${url}`, headers: lms },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "학습지를 불러올 수 없습니다." });
+      res.json(result.data);
     } catch {
       res.status(500).json({ message: "학습지 조회 중 오류가 발생했습니다." });
     }
@@ -1603,16 +1624,42 @@ export async function registerRoutes(
       if (!name?.trim()) {
         return res.status(400).json({ message: "학원명을 입력해주세요." });
       }
-      const flipResponse = await fetch(
+      
+      // Try multiple endpoints for academy search (no auth required for partner search)
+      const endpoints = [
+        `https://www.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(name.trim())}`,
+        `https://dev.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(name.trim())}`,
+        `https://lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
         `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
-        { headers: { "Accept": "application/json" } }
-      );
-      if (!flipResponse.ok) {
+        `https://dev.mstr.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
+      ];
+      
+      let data: any = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, { 
+            headers: { "Accept": "application/json" },
+            redirect: 'follow'
+          });
+          console.log(`[AUTH] Academy search ${endpoint}: ${response.status}`);
+          
+          if (response.ok) {
+            data = await response.json();
+            break;
+          }
+        } catch (err) {
+          console.log(`[AUTH] Academy search ${endpoint} failed:`, err);
+        }
+      }
+      
+      if (!data) {
         return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
       }
-      const data = await flipResponse.json();
+      
       res.json(data);
-    } catch {
+    } catch (err) {
+      console.error('[AUTH] Academy search error:', err);
       res.status(500).json({ message: "학원 검색 중 오류가 발생했습니다." });
     }
   });
@@ -1623,16 +1670,42 @@ export async function registerRoutes(
       if (!brandNo) {
         return res.status(400).json({ message: "brandNo가 필요합니다." });
       }
-      const flipResponse = await fetch(
+      
+      // Try multiple endpoints for branch search
+      const endpoints = [
+        `https://www.flipedu.net/api/v2/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
+        `https://dev.flipedu.net/api/v2/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
+        `https://lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
         `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
-        { headers: { "Accept": "application/json" } }
-      );
-      if (!flipResponse.ok) {
+        `https://dev.mstr.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
+      ];
+      
+      let data: any = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, { 
+            headers: { "Accept": "application/json" },
+            redirect: 'follow'
+          });
+          console.log(`[AUTH] Branches search ${endpoint}: ${response.status}`);
+          
+          if (response.ok) {
+            data = await response.json();
+            break;
+          }
+        } catch (err) {
+          console.log(`[AUTH] Branches search ${endpoint} failed:`, err);
+        }
+      }
+      
+      if (!data) {
         return res.status(500).json({ message: "지점 목록을 불러올 수 없습니다." });
       }
-      const data = await flipResponse.json();
+      
       res.json(data);
-    } catch {
+    } catch (err) {
+      console.error('[AUTH] Branches search error:', err);
       res.status(500).json({ message: "지점 조회 중 오류가 발생했습니다." });
     }
   });
@@ -1645,13 +1718,21 @@ export async function registerRoutes(
       let plainPassword = input.credential;
       try { plainPassword = decodeURIComponent(Buffer.from(input.credential, "base64").toString("utf8")); } catch {}
 
-      // Primary: www.flipedu.net/api/v2/login (confirmed via HAR)
-      // Body: {sysSeq:0, brand: brandNo(number), type:"STAFF", branch: branchNo(number), username, password}
       let flipResponse: Response | null = null;
       let data: any = null;
       let xAuthToken = "";
+      let cookieStr = "";
 
+      // Login body variants to try
       const primaryBody = {
+        sysSeq: 0,
+        brand: Number(input.brandNo),
+        type: "STAFF",
+        branch: Number(input.branchNo),
+        username: input.username,
+        password: plainPassword,
+      };
+      const primaryBodyStr = {
         sysSeq: 0,
         brand: String(input.brandNo),
         type: "STAFF",
@@ -1659,66 +1740,70 @@ export async function registerRoutes(
         username: input.username,
         password: plainPassword,
       };
-      // Run both logins in parallel: www.flipedu.net for x-auth-token, editor.flipedu.app for cookies
-      const [netResult, appResult] = await Promise.allSettled([
-        fetch("https://dev.flipedu.net/api/v2/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify(primaryBody),
-        }),
-        fetch("https://dev.lms.flipedu.net/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brandNo: input.brandNo, branchNo: input.branchNo, username: input.username, credential: input.credential }),
-        }),
-      ]);
+      const lmsBody = {
+        brandNo: input.brandNo,
+        branchNo: input.branchNo,
+        username: input.username,
+        credential: input.credential,
+      };
+      const lmsBodyPlain = {
+        brandNo: input.brandNo,
+        branchNo: input.branchNo,
+        username: input.username,
+        password: plainPassword,
+      };
 
-      // Process www.flipedu.net result (primary — x-auth-token)
-      let netR: Response | null = null;
-      if (netResult.status === "fulfilled") {
-        netR = netResult.value;
-        const d: any = await netR.json().catch(() => ({}));
-        console.log(`[AUTH] www.flipedu.net/api/v2/login → ${netR.status}`);
-        if (netR.ok) {
-          flipResponse = netR;
-          data = d;
-          xAuthToken = netR.headers.get("x-auth-token") || d?.token || d?.user?.token || d?.authToken || "";
-          console.log(`[AUTH] x-auth-token: ${xAuthToken ? xAuthToken.substring(0, 20) + "..." : "none"}`);
-        } else {
-          flipResponse = netR;
-          data = d;
-        }
-      } else {
-        console.log(`[AUTH] www.flipedu.net/api/v2/login failed: ${netResult.reason}`);
-      }
+      // All login endpoints to try in order (www.flipedu.net is the confirmed working endpoint per HAR)
+      const loginAttempts: Array<{ url: string; body: any }> = [
+        { url: "https://www.flipedu.net/api/v2/login", body: primaryBody },
+        { url: "https://dev.flipedu.net/api/v2/login", body: primaryBody },
+        { url: "https://dev.flipedu.net/api/v2/login", body: primaryBodyStr },
+        { url: "https://lms.flipedu.net/api/auth/login", body: lmsBody },
+        { url: "https://lms.flipedu.net/api/auth/login", body: lmsBodyPlain },
+        { url: "https://dev.lms.flipedu.net/api/auth/login", body: lmsBody },
+        { url: "https://dev.lms.flipedu.net/api/auth/login", body: lmsBodyPlain },
+        { url: "https://dev.mstr.flipedu.net/api/auth/login", body: lmsBody },
+        { url: "https://dev.mstr.flipedu.net/api/auth/login", body: primaryBody },
+      ];
 
-      // Process editor.flipedu.app result (for cookies)
-      let cookieStr = "";
-      let appR: Response | null = null;
-      if (appResult.status === "fulfilled") {
-        appR = appResult.value;
-        const d: any = await appR.json().catch(() => ({}));
-        console.log(`[AUTH] editor.flipedu.app/api/auth/login → ${appR.status}`);
-        if (appR.ok) {
-          if (!flipResponse?.ok) { flipResponse = appR; data = d; }
-          // Extract cookies from editor.flipedu.app
-          let setCookies: string[] = [];
-          if (typeof appR.headers.getSetCookie === "function") {
-            setCookies = appR.headers.getSetCookie();
-          } else {
-            const raw = appR.headers.get("set-cookie");
-            if (raw) setCookies = [raw];
+      for (const attempt of loginAttempts) {
+        try {
+          const r = await fetch(attempt.url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify(attempt.body),
+            redirect: 'follow',
+          });
+          const d: any = await r.json().catch(() => ({}));
+          console.log(`[AUTH] ${attempt.url} → ${r.status}`, JSON.stringify(d).substring(0, 200));
+
+          if (r.ok) {
+            flipResponse = r;
+            data = d;
+            // Extract x-auth-token
+            const token = r.headers.get("x-auth-token") || d?.token || d?.user?.token || d?.authToken || d?.accessToken || "";
+            if (token) xAuthToken = token;
+            // Extract cookies
+            let setCookies: string[] = [];
+            if (typeof (r.headers as any).getSetCookie === "function") {
+              setCookies = (r.headers as any).getSetCookie();
+            } else {
+              const raw = r.headers.get("set-cookie");
+              if (raw) setCookies = [raw];
+            }
+            if (setCookies.length > 0) {
+              cookieStr = setCookies.map((c: string) => c.split(";")[0]).join("; ");
+            }
+            console.log(`[AUTH] Login success via ${attempt.url}, token: ${xAuthToken ? "yes" : "no"}, cookies: ${cookieStr ? "yes" : "no"}`);
+            break;
+          } else if (!flipResponse) {
+            // Keep first failed response for error message
+            flipResponse = r;
+            data = d;
           }
-          cookieStr = setCookies.map((c: string) => c.split(";")[0]).join("; ");
-          console.log(`[AUTH] editor.flipedu.app cookies: ${cookieStr ? "obtained" : "none"}`);
-          if (!xAuthToken) {
-            xAuthToken = appR.headers.get("x-auth-token") || d?.token || d?.user?.token || d?.authToken || "";
-          }
-        } else if (!flipResponse) {
-          flipResponse = appR; data = d;
+        } catch (err) {
+          console.log(`[AUTH] ${attempt.url} failed:`, err);
         }
-      } else {
-        console.log(`[AUTH] editor.flipedu.app login failed: ${appResult.reason}`);
       }
 
       if (!flipResponse || !flipResponse.ok) {
@@ -1730,16 +1815,16 @@ export async function registerRoutes(
 
       req.session.authToken = xAuthToken || "authenticated";
       req.session.username = input.username;
-      req.session.academyName = data?.academyName || "";
-      req.session.brandName = input.brandName || "";
-      req.session.branchName = input.branchName || "";
+      req.session.academyName = data?.brandName || input.brandName || data?.academyName || data?.user?.academyName || "";
+      req.session.brandName = data?.brandName || input.brandName || data?.user?.brandName || "";
+      req.session.branchName = data?.branchName || input.branchName || data?.user?.branchName || "";
       req.session.flipCookies = cookieStr;
       req.session.flipCredential = input.credential;
-      req.session.flipBrandNo = Number(input.brandNo);
-      req.session.flipBranchNo = Number(input.branchNo);
-      const sgNameRaw = data?.user?.subjectGroupName || "eng";
+      req.session.flipBrandNo = Number(data?.brandNo || input.brandNo);
+      req.session.flipBranchNo = Number(data?.branchNo || input.branchNo);
+      const sgNameRaw = data?.subjectGroupName || data?.user?.subjectGroupName || "eng";
       req.session.subjectGroupName = Array.isArray(sgNameRaw) ? sgNameRaw.join(",") : String(sgNameRaw);
-      console.log(`[AUTH] subjectGroupName stored: ${req.session.subjectGroupName}`);
+      console.log(`[AUTH] Login complete. user=${input.username}, brand=${req.session.flipBrandNo}, branch=${req.session.flipBranchNo}, token=${xAuthToken ? "yes" : "no"}, cookies=${cookieStr ? "yes" : "no"}, subjectGroup=${req.session.subjectGroupName}`);
 
       // Probe video/swagger endpoints with fresh auth
       (async () => {
@@ -2019,7 +2104,7 @@ export async function registerRoutes(
       const parts = (c.path || c.name).split(sep);
       if (parts.length >= 2) depth3Set.add(parts[parts.length - 1].trim());
     }
-    const depth3List = [...depth3Set].join(", ");
+    const depth3List = Array.from(depth3Set).join(", ");
 
     const candidateList = candidates.map((c, i) => `${i}: ${c.path || c.name}`).join("\n");
     const questionLines = questions.map(q => {
