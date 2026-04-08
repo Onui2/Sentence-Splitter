@@ -1,19 +1,14 @@
 {
   "version": 2,
-  "builds": [
+  "outputDirectory": "dist/public",
+  "rewrites": [
     {
-      "src": "server/index.ts",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "server/index.ts"
+      "source": "/api/(.*)",
+      "destination": "api/index.ts"
     },
     {
-      "src": "/(.*)",
-      "dest": "server/index.ts"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
