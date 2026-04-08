@@ -1,0 +1,71 @@
+[
+    {
+        "shadowingNo": 1245912,
+        "branchNo": 3,
+        "body": [
+            {
+                "ordering": 0,
+                "type": "EXAMPLE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "<p>I was heading in the direction of a forest road that I knew would take me home.</p>",
+                "contentsList": null
+            },
+            {
+                "ordering": 1,
+                "type": "QUERY",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "<p>이 문장을 듣고 따라 말해보세요.</p>",
+                "contentsList": null
+            }
+        ],
+        "aiSound": "I was heading in the direction of a forest road that I knew would take me home.\n",
+        "aiGrading": "I was heading in the direction of a forest road that I knew would take me home.\n",
+        "comments": null,
+        "writeInfo": {
+            "createdAt": "2026-02-21T00:38:14",
+            "createdByNo": 381,
+            "createdById": "{만능}이현우",
+            "createdByNm": "{만능}이현우",
+            "updatedAt": "2026-02-21T00:39:40",
+            "updatedByNo": 383,
+            "updatedById": "{만능}김정현",
+            "updatedByNm": "{만능}김정현"
+        }
+    },
+    {
+        "shadowingNo": 1245913,
+        "branchNo": 3,
+        "body": [
+            {
+                "ordering": 0,
+                "type": "EXAMPLE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "<p>But almost as though someone had switched off all the lights I was suddenly in a black forest with no light of any kind.</p>",
+                "contentsList": null
+            },
+            {
+                "ordering": 1,
+                "type": "QUERY",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "<p>이 문장을 듣고 따라 말해보세요.</p>",
+                "contentsList": null
+            }
+        ],
+        "aiSound": null,
+        "aiGrading": null,
+        "comments": null,
+        "writeInfo": {
+            "createdAt": "2026-02-21T00:38:14",
+            "createdByNo": 381,
+            "createdById": "{만능}이현우",
+            "createdByNm": "{만능}이현우",
+            "updatedAt": "2026-02-21T00:39:40",
+            "updatedByNo": 383,
+            "updatedById": "{만능}김정현",
+            "updatedByNm": "{만능}김정현"
+        }
+    },

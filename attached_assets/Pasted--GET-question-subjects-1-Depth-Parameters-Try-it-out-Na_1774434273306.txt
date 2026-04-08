@@ -1,0 +1,223 @@
+
+
+GET
+/question/subjects
+조회 (1 Depth)
+
+Parameters
+Try it out
+Name	Description
+isInContents
+boolean
+(query)
+컨텐츠포함여부
+
+Default value : false
+
+parentNo
+integer($int64)
+(query)
+상위분류식별No (NULL:1 Depth)
+
+subjectGroup *
+string
+(query)
+과목
+
+Available values : eng, math, kor, soc, sci, arts, etc
+
+Responses
+Response content type
+
+*/*
+Code	Description
+200	
+정상 처리
+
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "level": 0,
+    "ordering": 0
+  }
+]
+POST
+/question/subjects
+등록
+
+Parameters
+Try it out
+Name	Description
+formList *
+(body)
+등록양식
+
+Example Value
+Model
+[
+  {
+    "subjectGroup": "eng",
+    "name": "string",
+    "parentNo": 0,
+    "ordering": 0
+  }
+]
+Parameter content type
+
+application/json
+Responses
+Response content type
+
+*/*
+Code	Description
+200	
+OK
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "level": 0,
+    "ordering": 0
+  }
+]
+201	
+정상
+
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "level": 0,
+    "ordering": 0
+  }
+]
+PUT
+/question/subjects
+수정
+
+Parameters
+Try it out
+Name	Description
+formList *
+(body)
+수정양식
+
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "ordering": 0
+  }
+]
+Parameter content type
+
+application/json
+Responses
+Response content type
+
+*/*
+Code	Description
+200	
+OK
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "level": 0,
+    "ordering": 0
+  }
+]
+201	
+정상
+
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "level": 0,
+    "ordering": 0
+  }
+]
+DELETE
+/question/subjects
+삭제
+
+Parameters
+Try it out
+Name	Description
+subjectNos *
+array[integer]
+(query)
+분류식별No
+
+Responses
+Response content type
+
+*/*
+Code	Description
+200	
+OK
+Example Value
+Model
+{}
+204	
+정상
+
+Example Value
+Model
+{}
+GET
+/question/subjects/all
+조회 (전체 Depth)
+
+Parameters
+Try it out
+Name	Description
+isInContents
+boolean
+(query)
+컨텐츠포함여부
+
+Default value : false
+
+subjectGroup *
+string
+(query)
+과목
+
+Available values : eng, math, kor, soc, sci, arts, etc
+
+Responses
+Response content type
+
+*/*
+Code	Description
+200	
+정상 처리
+
+Example Value
+Model
+[
+  {
+    "subjectNo": 0,
+    "name": "string",
+    "level": 0,
+    "ordering": 0,
+    "children": [
+      null
+    ]
+  }
+]

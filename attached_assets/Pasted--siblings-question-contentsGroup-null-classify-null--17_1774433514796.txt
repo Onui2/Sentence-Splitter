@@ -1,0 +1,119 @@
+{
+    "siblings": [],
+    "question": {
+        "contentsGroup": null,
+        "classify": null,
+        "subject": {
+            "name": "5지 선다",
+            "level": 3,
+            "type": "QUESTION",
+            "subjectGroupName": "eng",
+            "ordering": 1,
+            "id": 3008,
+            "children": null,
+            "parent": {
+                "name": "어법",
+                "level": 2,
+                "type": "QUESTION",
+                "subjectGroupName": "eng",
+                "ordering": 1,
+                "id": 2981,
+                "children": null,
+                "parent": {
+                    "name": "모의고사",
+                    "level": 1,
+                    "type": "QUESTION",
+                    "subjectGroupName": "eng",
+                    "ordering": 5,
+                    "id": 1045,
+                    "children": null,
+                    "parent": null
+                }
+            }
+        },
+        "difficulty": null,
+        "area": null,
+        "tags": [],
+        "dateInfo": {
+            "createdAt": "2026-03-25T19:10:12.474",
+            "updatedAt": "2026-03-25T19:11:28.214"
+        },
+        "isShared": true,
+        "questionType": "BASIC",
+        "answerType": "OBJECTIVE",
+        "commonBodyId": null,
+        "commonBody": [],
+        "body": [
+            {
+                "ordering": 0,
+                "type": "QUERY",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "테스트",
+                "regexContents": "테스트",
+                "contentsList": null
+            },
+            {
+                "ordering": 1,
+                "type": "CHOICE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "ㅈ",
+                "regexContents": "ㅈ",
+                "contentsList": null
+            },
+            {
+                "ordering": 2,
+                "type": "CHOICE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "ㄷ",
+                "regexContents": "ㄷ",
+                "contentsList": null
+            },
+            {
+                "ordering": 3,
+                "type": "CHOICE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "ㄱ",
+                "regexContents": "ㄱ",
+                "contentsList": null
+            },
+            {
+                "ordering": 4,
+                "type": "CHOICE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "ㅅ",
+                "regexContents": "ㅅ",
+                "contentsList": null
+            },
+            {
+                "ordering": 5,
+                "type": "CHOICE",
+                "fileType": "TEXT",
+                "file": null,
+                "contents": "ㅛ",
+                "regexContents": "ㅛ",
+                "contentsList": null
+            }
+        ],
+        "blocks": null,
+        "gradingConditions": {
+            "sensitive": false,
+            "spacingWord": false,
+            "specialCharacter": false,
+            "orGrading": false
+        },
+        "commonComments": [],
+        "comments": [],
+        "elements": [],
+        "inCorrectReasons": [],
+        "corrects": [
+            "4"
+        ],
+        "grouped": false,
+        "id": 1288585
+    }
+}
