@@ -1620,92 +1620,175 @@ export async function registerRoutes(
 
   app.get(api.auth.searchAcademy.path, async (req, res) => {
     try {
-      const name = req.query.name as string;
-      if (!name?.trim()) {
+      const rawName = req.query.name as string | string[] | undefined;
+      const name = Array.isArray(rawName) ? rawName[0] : rawName;
+      const trimmedName = name?.trim();
+      if (!trimmedName) {
         return res.status(400).json({ message: "학원명을 입력해주세요." });
       }
-      
-      // Try multiple endpoints for academy search (no auth required for partner search)
-      const endpoints = [
-        `https://www.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(name.trim())}`,
-        `https://dev.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(name.trim())}`,
-        `https://lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
-        `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
-        `https://dev.mstr.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
+
+      // 1) 가장 안정적인 경로: flipedu partners API에서 브랜드(brandNo) 검색
+      // (한글 학원명 검색이 여기서 잘 되는 경우가 많아 우선 시도)
+      const partnerEndpoints = [
+        // Confirmed working (user-provided): https://www.flipedu.net/api/v2/partners?name=...
+        `https://www.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://dev.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://www.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://dev.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://dev.mstr.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
       ];
-      
-      let data: any = null;
-      
-      for (const endpoint of endpoints) {
+
+      const partnerHeaders = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        // Match the environment where CORS allows this request (teacher portal)
+        "Origin": "https://teacher.flipedu.net",
+        "Referer": "https://teacher.flipedu.net/",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      };
+
+      for (const endpoint of partnerEndpoints) {
         try {
-          const response = await fetch(endpoint, { 
-            headers: { "Accept": "application/json" },
-            redirect: 'follow'
-          });
-          console.log(`[AUTH] Academy search ${endpoint}: ${response.status}`);
-          
-          if (response.ok) {
-            data = await response.json();
-            break;
-          }
-        } catch (err) {
-          console.log(`[AUTH] Academy search ${endpoint} failed:`, err);
+          const r = await fetch(endpoint, { headers: partnerHeaders, redirect: "follow" });
+          console.log(`[AUTH] Academy search partners ${endpoint}: ${r.status}`);
+          if (!r.ok) continue;
+          const raw = await r.json().catch(() => null);
+          if (!raw) continue;
+
+          // Normalize: accept {brandNo, logo, name} or {data:{...}} etc.
+          // The /api/v2/partners response may be an array or a paged object.
+          const candidateRoot = raw?.data ?? raw;
+          const candidateArray =
+            Array.isArray(candidateRoot) ? candidateRoot :
+            Array.isArray(candidateRoot?.contents) ? candidateRoot.contents :
+            Array.isArray(candidateRoot?.content) ? candidateRoot.content :
+            null;
+
+          const candidate = (candidateArray ? candidateArray[0] : candidateRoot) ?? null;
+          if (!candidate) continue;
+
+          const brandNo = String(candidate?.brandNo ?? candidate?.brand_no ?? candidate?.brand ?? candidate?.id ?? "");
+          if (!brandNo) continue;
+
+          const logo = (candidate?.logo ?? null) as string | null;
+          const displayName = String(candidate?.name ?? candidate?.brandName ?? candidate?.brand_name ?? trimmedName);
+          return res.json({ brandNo, logo, name: displayName });
+        } catch (e) {
+          console.log(`[AUTH] Academy search partners ${endpoint} error:`, e);
         }
       }
-      
-      if (!data) {
-        return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+
+      // 2) fallback: mstr branches 검색으로 brandNo 추출
+      const mstrHeaders = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Origin": "https://mstr.flipedu.net",
+        "Referer": "https://mstr.flipedu.net/",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      };
+
+      const searchUrl = `https://mstr.flipedu.net/api/branches?name=${encodeURIComponent(trimmedName)}&page=0&size=10`;
+      const response = await fetch(searchUrl, { headers: mstrHeaders, redirect: "follow" });
+      console.log(`[AUTH] Academy search mstr: ${response.status}`);
+
+      if (response.ok) {
+        const raw = await response.json();
+        const contents = raw.contents || raw.content || (Array.isArray(raw) ? raw : []);
+        const contentsArr = Array.isArray(contents) ? contents : [];
+        if (contentsArr.length === 0) {
+          return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+        }
+        const first = contentsArr[0];
+        const brandNo = String(first.brandNo ?? first.brand_no ?? first.id ?? "");
+        if (!brandNo) {
+          return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+        }
+        return res.json({ brandNo, logo: first.logo ?? null, name: first.name ?? first.brandName ?? trimmedName });
       }
-      
-      res.json(data);
+
+      console.log(`[AUTH] mstr search failed: ${response.status}`);
+      return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
     } catch (err) {
-      console.error('[AUTH] Academy search error:', err);
+      console.error("[AUTH] Academy search error:", err);
       res.status(500).json({ message: "학원 검색 중 오류가 발생했습니다." });
     }
   });
 
   app.get(api.auth.branches.path, async (req, res) => {
     try {
-      const brandNo = req.query.brandNo as string;
-      if (!brandNo) {
+      const rawBrandNo = req.query.brandNo as string | string[] | undefined;
+      const brandNo = Array.isArray(rawBrandNo) ? rawBrandNo[0] : rawBrandNo;
+      const trimmedBrandNo = brandNo?.trim();
+      if (!trimmedBrandNo) {
         return res.status(400).json({ message: "brandNo가 필요합니다." });
       }
-      
-      // Try multiple endpoints for branch search
+
+      const flipHeaders = {
+        "Accept": "application/json",
+        "Origin": "https://editor.flipedu.net",
+        "Referer": "https://editor.flipedu.net/",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      };
+
+      // Confirmed working endpoint: GET /api/v2/branches?sys=0&brand={brandNo}
       const endpoints = [
-        `https://www.flipedu.net/api/v2/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
-        `https://dev.flipedu.net/api/v2/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
-        `https://lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
-        `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
-        `https://dev.mstr.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
+        `https://www.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
+        `https://dev.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
+        `https://www.flipedu.net/api/v2/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
+        `https://lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
+        `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
       ];
-      
-      let data: any = null;
-      
+
+      let rawData: any = null;
+
       for (const endpoint of endpoints) {
         try {
-          const response = await fetch(endpoint, { 
-            headers: { "Accept": "application/json" },
-            redirect: 'follow'
-          });
-          console.log(`[AUTH] Branches search ${endpoint}: ${response.status}`);
-          
+          const response = await fetch(endpoint, { headers: flipHeaders, redirect: "follow" });
+          console.log(`[AUTH] Branches ${endpoint}: ${response.status}`);
           if (response.ok) {
-            data = await response.json();
+            rawData = await response.json();
+            console.log(`[AUTH] Branches success:`, JSON.stringify(rawData).substring(0, 300));
             break;
+          } else {
+            const errText = await response.text().catch(() => "");
+            console.log(`[AUTH] Branches ${endpoint} failed: ${errText.substring(0, 200)}`);
           }
         } catch (err) {
-          console.log(`[AUTH] Branches search ${endpoint} failed:`, err);
+          console.log(`[AUTH] Branches ${endpoint} error:`, err);
         }
       }
-      
-      if (!data) {
+
+      if (!rawData) {
         return res.status(500).json({ message: "지점 목록을 불러올 수 없습니다." });
       }
-      
-      res.json(data);
+
+      // Normalize response: /api/v2/branches returns array of branch objects
+      // Map to { value, label1, label2 } format expected by client
+      let branches: Array<{ value: string; label1: string; label2?: string }> = [];
+      if (Array.isArray(rawData)) {
+        branches = rawData.map((b: any) => ({
+          value: String(b.branchNo ?? b.id ?? b.no ?? b.value ?? ""),
+          label1: b.branchName ?? b.name ?? b.label1 ?? "",
+          label2: b.label2,
+        }));
+      } else if (Array.isArray(rawData.content)) {
+        branches = rawData.content.map((b: any) => ({
+          value: String(b.branchNo ?? b.id ?? b.no ?? b.value ?? ""),
+          label1: b.branchName ?? b.name ?? b.label1 ?? "",
+          label2: b.label2,
+        }));
+      } else {
+        // Unexpected response shape — fail fast so client won't crash on .map
+        return res.status(500).json({ message: "지점 응답 형식이 올바르지 않습니다." });
+      }
+
+      res.json(branches);
     } catch (err) {
-      console.error('[AUTH] Branches search error:', err);
+      console.error("[AUTH] Branches error:", err);
       res.status(500).json({ message: "지점 조회 중 오류가 발생했습니다." });
     }
   });

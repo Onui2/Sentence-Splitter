@@ -81,34 +81,52 @@ export default function Login() {
       return;
     }
 
+    // 학원명으로 brandNo를 조회한 뒤 지점 목록을 불러옵니다.
+    const inputName = academyName.trim();
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/auth/partners?name=${encodeURIComponent(academyName.trim())}`);
-      if (!res.ok) {
-        toast({ title: "검색 실패", description: "학원을 찾을 수 없습니다.", variant: "destructive" });
-        return;
+      const partnerRes = await fetch(`/api/auth/partners?name=${encodeURIComponent(inputName)}`);
+      let inputBrandNo = "";
+      let resolvedName = inputName;
+
+      if (partnerRes.ok) {
+        const partnerData: { brandNo?: string; name?: string } = await partnerRes.json();
+        inputBrandNo = String(partnerData?.brandNo ?? "");
+        resolvedName = partnerData?.name ?? inputName;
+      } else {
+        // 학원명 검색이 막히는 환경이 있어 fallback:
+        // 사용자가 숫자만 입력한 경우 brandNo로 간주하고 지점 조회로 진행
+        if (/^\d+$/.test(inputName)) {
+          inputBrandNo = inputName;
+        } else {
+          toast({ title: "검색 실패", description: "해당 학원을 찾을 수 없습니다. (학원명 또는 brandNo 숫자를 입력해주세요)", variant: "destructive" });
+          return;
+        }
       }
-      const data = await res.json();
-      if (!data.brandNo) {
-        toast({ title: "검색 실패", description: "학원을 찾을 수 없습니다.", variant: "destructive" });
+
+      if (!inputBrandNo) {
+        toast({ title: "검색 실패", description: "해당 학원을 찾을 수 없습니다. (brandNo 확인 필요)", variant: "destructive" });
         return;
       }
 
-      setBrandNo(data.brandNo);
-
-      const branchRes = await fetch(`/api/auth/branches?brandNo=${encodeURIComponent(data.brandNo)}`);
+      // 지점 목록 조회
+      const branchRes = await fetch(`/api/auth/branches?brandNo=${encodeURIComponent(inputBrandNo)}`);
       if (!branchRes.ok) {
         toast({ title: "오류", description: "지점 목록을 불러올 수 없습니다.", variant: "destructive" });
         return;
       }
       const branchData: Branch[] = await branchRes.json();
-      setBranches(Array.isArray(branchData) ? branchData : []);
-      if (branchData.length > 0) {
-        setSelectedBranch(branchData[0].value);
+      if (!Array.isArray(branchData) || branchData.length === 0) {
+        toast({ title: "검색 실패", description: "해당 학원의 지점을 찾을 수 없습니다.", variant: "destructive" });
+        return;
       }
+      setAcademyName(resolvedName);
+      setBrandNo(inputBrandNo);
+      setBranches(branchData);
+      setSelectedBranch(branchData[0].value);
       setStep("login");
     } catch {
-      toast({ title: "오류", description: "학원 검색 중 오류가 발생했습니다.", variant: "destructive" });
+      toast({ title: "오류", description: "지점 조회 중 오류가 발생했습니다.", variant: "destructive" });
     } finally {
       setIsSearching(false);
     }
@@ -191,7 +209,7 @@ export default function Login() {
                 <label className="text-[12px] text-gray-600 font-medium">학원명</label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="학원명을 입력하세요"
+                    placeholder="학원명을 입력하세요 (예: 플립에듀)"
                     className="border-gray-300 h-11 text-[13px] placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-blue-500 flex-1"
                     value={academyName}
                     onChange={(e) => setAcademyName(e.target.value)}
@@ -222,7 +240,7 @@ export default function Login() {
                 data-testid="button-back"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>{academyName}</span>
+                <span>학원: {academyName}</span>
               </button>
 
               <div className="space-y-2">
@@ -238,6 +256,7 @@ export default function Login() {
                     {branches.map((b) => (
                       <SelectItem key={b.value} value={b.value} className="text-[13px]">
                         {b.label1}
+                        {b.label2 ? ` ${b.label2}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
