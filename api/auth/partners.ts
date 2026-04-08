@@ -1,6 +1,11 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+async function getFetch(): Promise<typeof fetch> {
+  if (typeof (globalThis as any).fetch === "function") return (globalThis as any).fetch;
+  // Node 18+ provides undici; Vercel Node runtimes commonly support it.
+  const undici: any = await import("undici");
+  return undici.fetch;
+}
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   try {
     if (req.method !== "GET") return res.status(405).json({ message: "Method Not Allowed" });
     const name = Array.isArray(req.query.name) ? req.query.name[0] : req.query.name;
@@ -8,7 +13,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!trimmed) return res.status(400).json({ message: "학원명을 입력해주세요." });
 
     const url = `https://www.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmed)}`;
-    const upstream = await fetch(url, {
+    const fetchFn = await getFetch();
+    const upstream = await fetchFn(url, {
       headers: {
         Accept: "application/json, text/plain, */*",
         Origin: "https://teacher.flipedu.net",

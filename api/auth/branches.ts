@@ -1,8 +1,12 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-
 type Branch = { value: string; label1: string; label2?: string };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function getFetch(): Promise<typeof fetch> {
+  if (typeof (globalThis as any).fetch === "function") return (globalThis as any).fetch;
+  const undici: any = await import("undici");
+  return undici.fetch;
+}
+
+export default async function handler(req: any, res: any) {
   try {
     if (req.method !== "GET") return res.status(405).json({ message: "Method Not Allowed" });
     const brandNoRaw = Array.isArray(req.query.brandNo) ? req.query.brandNo[0] : req.query.brandNo;
@@ -10,7 +14,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!brandNo) return res.status(400).json({ message: "brandNo가 필요합니다." });
 
     const url = `https://www.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(brandNo)}`;
-    const upstream = await fetch(url, {
+    const fetchFn = await getFetch();
+    const upstream = await fetchFn(url, {
       headers: {
         Accept: "application/json, text/plain, */*",
         Origin: "https://teacher.flipedu.net",
