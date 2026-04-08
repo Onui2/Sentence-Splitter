@@ -7,6 +7,7 @@
     { "source": "/api/auth/login", "destination": "/api/auth/login.ts" },
     { "source": "/api/auth/me", "destination": "/api/auth/me.ts" },
     { "source": "/api/auth/logout", "destination": "/api/auth/logout.ts" },
+    { "source": "/api/(.*)", "destination": "/api/index.ts" },
     {
       "source": "/(.*)",
       "destination": "/index.html"
