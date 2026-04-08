@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -214,7 +214,7 @@ export default function Home() {
 
   const updateCategoryMutation = useMutation({
     mutationFn: async ({ classifyNo, name }: { classifyNo: string; name: string }) => {
-      const res = await fetch(`/api/flip-categories/${classifyNo}`, {
+      const res = await fetch(buildUrl(api.flipCategories.update.path, { classifyNo }), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -235,12 +235,13 @@ export default function Home() {
 
   const deleteCategoryMutation = useMutation({
     mutationFn: async (classifyNo: string) => {
-      const res = await fetch(`/api/flip-categories/${classifyNo}`, { method: "DELETE" });
+      const res = await fetch(buildUrl(api.flipCategories.delete.path, { classifyNo }), { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, classifyNo) => {
       queryClient.invalidateQueries({ queryKey: [api.flipCategories.list.path] });
+      if (categoryId === String(classifyNo)) setCategoryId(null);
       toast({ title: "카테고리가 삭제되었습니다." });
     },
     onError: (err: any) => {
@@ -275,7 +276,7 @@ export default function Home() {
     try {
       const results = await Promise.allSettled(
         movingPaperNos.map(async (paperNo) => {
-          const url = `/api/flip-papers/${paperNo}`;
+          const url = buildUrl(api.flipPapers.update.path, { paperNo });
           const res = await fetch(url, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },

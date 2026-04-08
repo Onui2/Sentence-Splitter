@@ -376,6 +376,54 @@ export const api = {
       },
     },
   },
+  questionSubjects: {
+    list: {
+      method: "GET" as const,
+      path: "/api/question-subjects" as const,
+      responses: {
+        200: z.array(z.any()),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
+  questions: {
+    bulkClassify: {
+      method: "PUT" as const,
+      path: "/api/questions/bulk-classify" as const,
+      input: z.object({
+        questions: z.array(z.object({
+          questionNo: z.number(),
+          classifyNo: z.number().nullable(),
+        })),
+      }),
+      responses: {
+        200: z.any(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
+  ai: {
+    classifySubject: {
+      method: "POST" as const,
+      path: "/api/ai/classify-subject" as const,
+      input: z.object({
+        questions: z.array(z.any()),
+        candidates: z.array(z.any()),
+      }),
+      responses: {
+        200: z.any(),
+        400: z.object({ message: z.string() }).optional(),
+      },
+    },
+    extractQuestions: {
+      method: "POST" as const,
+      path: "/api/ai/extract-questions" as const,
+      responses: {
+        200: z.any(),
+        400: z.object({ message: z.string() }).optional(),
+      },
+    },
+  },
   videos: {
     list: {
       method: "GET" as const,

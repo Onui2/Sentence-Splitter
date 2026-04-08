@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -125,9 +125,9 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
   });
 
   const { data: questionSubjects } = useQuery<any[]>({
-    queryKey: ["/api/question-subjects"],
+    queryKey: [api.questionSubjects.list.path],
     queryFn: async () => {
-      const res = await fetch("/api/question-subjects");
+      const res = await fetch(api.questionSubjects.list.path);
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : (data?.content ?? data?.data ?? []);
@@ -212,10 +212,10 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
 
   // Picker: papers list query
   const { data: pickerPapersData, isLoading: pickerPapersLoading } = useQuery<any>({
-    queryKey: ["/api/question-papers", pickerCategoryId, pickerPage, pickerDebouncedSearch, pickerOpen],
+    queryKey: [api.questionPapers.list.path, pickerCategoryId, pickerPage, pickerDebouncedSearch, pickerOpen],
     queryFn: async () => {
       if (!pickerOpen) return null;
-      let url = `/api/question-papers?page=${pickerPage}&size=10`;
+      let url = `${api.questionPapers.list.path}?page=${pickerPage}&size=10`;
       if (pickerCategoryId) url += `&classifyNo=${pickerCategoryId}`;
       if (pickerDebouncedSearch.trim()) url += `&integrateSearch=${encodeURIComponent(pickerDebouncedSearch.trim())}`;
       const res = await fetch(url);
@@ -230,7 +230,7 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
     if (pickerPaperNo === null) { setPickerPaperDetail(null); return; }
     setPickerPaperLoading(true);
     setPickerPaperDetail(null);
-    fetch(`/api/question-papers/${pickerPaperNo}`)
+    fetch(buildUrl(api.questionPapers.detail.path, { paperNo: pickerPaperNo }))
       .then(r => r.json())
       .then(d => setPickerPaperDetail(d))
       .catch(() => setPickerPaperDetail(null))
@@ -785,7 +785,7 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
 
   const updateCategoryMutation = useMutation({
     mutationFn: async ({ classifyNo, name }: { classifyNo: string; name: string }) => {
-      const res = await apiRequest("PUT", `/api/question-paper-categories/${classifyNo}`, { name });
+      const res = await apiRequest("PUT", buildUrl(api.questionPaperCategories.update.path, { classifyNo }), { name });
       return res.json();
     },
     onSuccess: () => {
@@ -797,11 +797,12 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
 
   const deleteCategoryMutation = useMutation({
     mutationFn: async (classifyNo: string) => {
-      const res = await apiRequest("DELETE", `/api/question-paper-categories/${classifyNo}`);
+      const res = await apiRequest("DELETE", buildUrl(api.questionPaperCategories.delete.path, { classifyNo }));
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, classifyNo) => {
       queryClient.invalidateQueries({ queryKey: [api.questionPaperCategories.list.path] });
+      if (categoryId === Number(classifyNo)) setCategoryId(undefined);
       setDeleteCatTarget(null);
     },
     onError: (err: any) => { toast({ title: "오류", description: err.message, variant: "destructive" }); setDeleteCatTarget(null); },
@@ -812,6 +813,19 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
       if (!title.trim()) throw new Error("제목을 입력해주세요.");
       const validItems = items.filter(item => item.question.trim());
       if (validItems.length === 0) throw new Error("최소 1개 이상의 문항에 질문을 입력해주세요.");
+      for (const item of validItems) {
+        if (item.questionType === "CHOICE") {
+          const filteredChoices = item.choices.filter((c) => c.trim());
+          if (filteredChoices.length < 2) {
+            throw new Error("객관식 문항은 최소 2개 이상의 선택지를 입력해주세요.");
+          }
+          if (item.correctAnswer < 1 || item.correctAnswer > item.choices.length) {
+            throw new Error("객관식 정답 번호가 올바르지 않습니다.");
+          }
+        } else if (!item.answerText.trim()) {
+          throw new Error("주관식/어순배열 문항은 정답 텍스트를 입력해주세요.");
+        }
+      }
       const payload = {
         title: title.trim(),
         categoryId,
@@ -842,7 +856,7 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
         }),
       };
       const res = editPaperNo
-        ? await apiRequest("PUT", `/api/question-papers/${editPaperNo}`, payload)
+        ? await apiRequest("PUT", buildUrl(api.questionPapers.update.path, { paperNo: editPaperNo }), payload)
         : await apiRequest("POST", api.questionPaperCreate.create.path, payload);
       return res.json();
     },
@@ -1218,7 +1232,7 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
         reader.onerror = reject;
         reader.readAsDataURL(extractImage);
       });
-      const res = await fetch("/api/ai/extract-questions", {
+      const res = await fetch(api.ai.extractQuestions.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: base64, mimeType: extractImage.type }),
@@ -2217,7 +2231,7 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
                 question: item.question || "",
                 body: item.body || "",
               }));
-              const res = await fetch("/api/ai/classify-subject", {
+              const res = await fetch(api.ai.classifySubject.path, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ questions: questionsPayload, candidates, paperTitle: title }),

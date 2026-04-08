@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -213,10 +213,19 @@ export default function ShadowingCreate() {
     mutationFn: async () => {
       if (!title.trim()) throw new Error("제목을 입력해주세요.");
       if (items.length === 0) throw new Error("최소 1개 이상의 문장을 추가해주세요.");
+      const validItems = items
+        .map((item) => ({
+          ...item,
+          originalText: item.originalText.trim(),
+          translation: item.translation.trim(),
+          question: (item.question || DEFAULT_QUESTION).trim(),
+        }))
+        .filter((item) => item.originalText.length > 0);
+      if (validItems.length === 0) throw new Error("원문 문장을 최소 1개 이상 입력해주세요.");
       const res = await apiRequest("POST", api.shadowing.create.path, {
         title: title.trim(),
         categoryId,
-        sentences: items.map(item => ({
+        sentences: validItems.map(item => ({
           originalText: item.originalText,
           translation: item.translation,
           question: item.question,
@@ -313,7 +322,7 @@ export default function ShadowingCreate() {
 
   const updateCategoryMutation = useMutation({
     mutationFn: async ({ classifyNo, name }: { classifyNo: string; name: string }) => {
-      const res = await fetch(`/api/flip-categories/${classifyNo}`, {
+      const res = await fetch(buildUrl(api.flipCategories.update.path, { classifyNo }), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -334,12 +343,13 @@ export default function ShadowingCreate() {
 
   const deleteCategoryMutation = useMutation({
     mutationFn: async (classifyNo: string) => {
-      const res = await fetch(`/api/flip-categories/${classifyNo}`, { method: "DELETE" });
+      const res = await fetch(buildUrl(api.flipCategories.delete.path, { classifyNo }), { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, classifyNo) => {
       queryClient.invalidateQueries({ queryKey: [api.flipCategories.list.path] });
+      if (categoryId === Number(classifyNo)) setCategoryId(undefined);
       setDeleteCatTarget(null);
       toast({ title: "카테고리가 삭제되었습니다." });
     },

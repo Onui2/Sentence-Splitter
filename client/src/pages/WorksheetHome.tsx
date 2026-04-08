@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -228,7 +228,7 @@ export default function WorksheetHome() {
 
   const updateCategoryMutation = useMutation({
     mutationFn: async ({ classifyNo, name }: { classifyNo: string; name: string }) => {
-      const res = await apiRequest("PUT", `/api/question-paper-categories/${classifyNo}`, { name });
+      const res = await apiRequest("PUT", buildUrl(api.questionPaperCategories.update.path, { classifyNo }), { name });
       return res.json();
     },
     onSuccess: () => {
@@ -241,20 +241,20 @@ export default function WorksheetHome() {
 
   const deleteCategoryMutation = useMutation({
     mutationFn: async (classifyNo: string) => {
-      const res = await apiRequest("DELETE", `/api/question-paper-categories/${classifyNo}`);
+      const res = await apiRequest("DELETE", buildUrl(api.questionPaperCategories.delete.path, { classifyNo }));
       return res;
     },
-    onSuccess: () => {
+    onSuccess: (_data, classifyNo) => {
       queryClient.invalidateQueries({ queryKey: [api.questionPaperCategories.list.path] });
       setDeleteCatTarget(null);
-      if (deleteCatTarget && categoryId === deleteCatTarget.classifyNo) setCategoryId(null);
+      if (categoryId === String(classifyNo)) setCategoryId(null);
     },
     onError: (err: Error) => { toast({ title: "오류", description: err.message, variant: "destructive" }); setDeleteCatTarget(null); },
   });
 
   const deletePaperMutation = useMutation({
     mutationFn: async (paperNo: number) => {
-      const res = await apiRequest("DELETE", `/api/question-papers/${paperNo}`);
+      const res = await apiRequest("DELETE", buildUrl(api.questionPapers.delete.path, { paperNo }));
       return res;
     },
     onSuccess: (_data, paperNo) => {
@@ -272,7 +272,7 @@ export default function WorksheetHome() {
     let successCount = 0;
     for (const id of selectedIds) {
       try {
-        await apiRequest("DELETE", `/api/question-papers/${id}`);
+        await apiRequest("DELETE", buildUrl(api.questionPapers.delete.path, { paperNo: id }));
         successCount++;
       } catch {}
     }
@@ -284,10 +284,10 @@ export default function WorksheetHome() {
 
   // Paper detail query
   const { data: paperDetail, isLoading: paperDetailLoading } = useQuery({
-    queryKey: ["/api/question-papers", selectedPaperNo],
+    queryKey: [api.questionPapers.list.path, selectedPaperNo],
     queryFn: async () => {
       if (!selectedPaperNo) return null;
-      const res = await fetch(`/api/question-papers/${selectedPaperNo}`);
+      const res = await fetch(buildUrl(api.questionPapers.detail.path, { paperNo: selectedPaperNo }));
       if (!res.ok) return null;
       return res.json();
     },
@@ -296,9 +296,9 @@ export default function WorksheetHome() {
 
   // Question subjects (문제 카테고리 목록)
   const { data: questionSubjects } = useQuery({
-    queryKey: ["/api/question-subjects"],
+    queryKey: [api.questionSubjects.list.path],
     queryFn: async () => {
-      const res = await fetch("/api/question-subjects");
+      const res = await fetch(api.questionSubjects.list.path);
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : [];
@@ -635,7 +635,7 @@ export default function WorksheetHome() {
     if (toUpdate.length === 0) { toast({ title: "변경 없음", description: "수정된 카테고리가 없습니다." }); return; }
     setSavingSubjects(true);
     try {
-      const res = await fetch("/api/questions/bulk-classify", {
+      const res = await fetch(api.questions.bulkClassify.path, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questions: toUpdate }),
       });
@@ -650,7 +650,7 @@ export default function WorksheetHome() {
           savedNos.forEach(no => { delete next[no]; });
           return next;
         });
-        queryClient.invalidateQueries({ queryKey: ["/api/question-papers", selectedPaperNo] });
+        queryClient.invalidateQueries({ queryKey: [api.questionPapers.list.path, selectedPaperNo] });
         if (data.flipSuccess) {
           toast({ title: "저장 완료", description: `${data.successCount}/${data.total}문항 카테고리가 FlipEdu 서버에 저장되었습니다.` });
         } else {
@@ -708,7 +708,7 @@ export default function WorksheetHome() {
           const { question, body } = getQuestionText(q);
           return { id: String(getQNo(q)), question, body };
         });
-        const res = await fetch("/api/ai/classify-subject", {
+        const res = await fetch(api.ai.classifySubject.path, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ questions: questionsPayload, candidates }),
         });
