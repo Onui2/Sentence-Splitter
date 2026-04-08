@@ -1650,9 +1650,12 @@ export async function registerRoutes(
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       };
 
+      const attempts: string[] = [];
       for (const endpoint of partnerEndpoints) {
         try {
           const r = await fetch(endpoint, { headers: partnerHeaders, redirect: "follow" });
+          const domain = new URL(endpoint).hostname.replace('www.', '').split('.')[0];
+          attempts.push(`${domain}: ${r.status}`);
           console.log(`[AUTH] Academy search partners ${endpoint}: ${r.status}`);
           if (!r.ok) continue;
           const raw = await r.json().catch(() => null);
@@ -1677,6 +1680,7 @@ export async function registerRoutes(
           const displayName = String(candidate?.name ?? candidate?.brandName ?? candidate?.brand_name ?? trimmedName);
           return res.json({ brandNo, logo, name: displayName });
         } catch (e) {
+          attempts.push(`err: ${endpoint.substring(8, 20)}`);
           console.log(`[AUTH] Academy search partners ${endpoint} error:`, e);
         }
       }
@@ -1700,18 +1704,21 @@ export async function registerRoutes(
         const contents = raw.contents || raw.content || (Array.isArray(raw) ? raw : []);
         const contentsArr = Array.isArray(contents) ? contents : [];
         if (contentsArr.length === 0) {
-          return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+          attempts.push(`mstr: empty`);
+          return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
         }
         const first = contentsArr[0];
         const brandNo = String(first.brandNo ?? first.brand_no ?? first.id ?? "");
         if (!brandNo) {
-          return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+          attempts.push(`mstr: no-id`);
+          return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
         }
         return res.json({ brandNo, logo: first.logo ?? null, name: first.name ?? first.brandName ?? trimmedName });
       }
 
       console.log(`[AUTH] mstr search failed: ${response.status}`);
-      return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+      attempts.push(`mstr: ${response.status}`);
+      return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
     } catch (err) {
       console.error("[AUTH] Academy search error:", err);
       res.status(500).json({ message: "학원 검색 중 오류가 발생했습니다." });
