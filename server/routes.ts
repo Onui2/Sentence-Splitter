@@ -24,7 +24,7 @@ function setCache(key: string, data: any) {
   apiCache.set(key, { data, ts: Date.now() });
 }
 function clearCache(prefix: string) {
-  for (const k of apiCache.keys()) { if (k.startsWith(prefix)) apiCache.delete(k); }
+  for (const k of Array.from(apiCache.keys())) { if (k.startsWith(prefix)) apiCache.delete(k); }
 }
 
 // Build a FlipEdu question item:
@@ -252,7 +252,7 @@ export async function registerRoutes(
       if (!createShadowingsRes.ok) {
         console.log(`[DEBUG] LMS failed, trying editor API...`);
         createShadowingsRes = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/shadowings",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowings",
           { method: "POST", headers: editorHeaders, body: JSON.stringify(shadowingItems) }
         );
         console.log(`[DEBUG] Editor shadowings create: ${createShadowingsRes.status}`);
@@ -299,7 +299,7 @@ export async function registerRoutes(
       if (!paperRes.ok) {
         console.log(`[DEBUG] LMS paper failed, trying editor API...`);
         paperRes = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/shadowing-paper",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper",
           { method: "POST", headers: editorHeaders, body: JSON.stringify(flipBody) }
         );
         console.log(`[DEBUG] Editor paper create: ${paperRes.status}`);
@@ -372,7 +372,7 @@ export async function registerRoutes(
 
       if (!flipResponse.ok) {
         flipResponse = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/classifys/all",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys/all",
           {
             headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
           }
@@ -429,7 +429,7 @@ export async function registerRoutes(
       if (!flipResponse.ok) {
         const bodyWithSubject = { ...body, subjectGroup: "eng" };
         flipResponse = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/classifys",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys",
           { method: "POST", headers: editorHeaders, body: JSON.stringify([bodyWithSubject]) }
         );
         if (!flipResponse.ok) {
@@ -483,7 +483,7 @@ export async function registerRoutes(
 
       if (!flipResponse.ok) {
         flipResponse = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/classifys",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys",
           { method: "PUT", headers: editorHeaders, body: JSON.stringify([updateBody]) }
         );
         console.log(`[DEBUG] Editor update category fallback (array): ${flipResponse.status}`);
@@ -491,7 +491,7 @@ export async function registerRoutes(
 
       if (!flipResponse.ok) {
         flipResponse = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/classifys",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys",
           { method: "PUT", headers: editorHeaders, body: JSON.stringify(updateBody) }
         );
         console.log(`[DEBUG] Editor update category fallback2 (object): ${flipResponse.status}`);
@@ -537,7 +537,7 @@ export async function registerRoutes(
 
       if (!flipResponse.ok) {
         flipResponse = await fetch(
-          `https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/classifys/${classifyNo}`,
+          `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys/${classifyNo}`,
           {
             method: "DELETE",
             headers: { "Accept": "application/json", "Cookie": cookies },
@@ -548,7 +548,7 @@ export async function registerRoutes(
 
       if (!flipResponse.ok) {
         flipResponse = await fetch(
-          `https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/classifys?classifyNos=${classifyNo}`,
+          `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/classifys?classifyNos=${classifyNo}`,
           {
             method: "DELETE",
             headers: { "Accept": "application/json", "Cookie": cookies },
@@ -576,7 +576,7 @@ export async function registerRoutes(
       const classifyNo = req.query.classifyNo as string;
       const pageNum = Math.max(0, parseInt(String(req.query.page || "0"), 10) || 0);
       const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
-      let url = `https://editor.flipedu.app/api/flipedu/branch/shadowing-papers?page=${pageNum}&size=${sizeNum}`;
+      let url = `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-papers?page=${pageNum}&size=${sizeNum}`;
       if (classifyNo && !isNaN(Number(classifyNo))) {
         url += `&classifyNo=${classifyNo}`;
       }
@@ -616,7 +616,7 @@ export async function registerRoutes(
       let flipResponse = await fetch(`https://lms.flipedu.net/api/branch/shadowing-paper/${paperNo}`, { headers: lmsHeaders });
       console.log(`[DEBUG] Detail GET LMS: ${flipResponse.status}`);
       if (!flipResponse.ok) {
-        flipResponse = await fetch(`https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/${paperNo}`, { headers: editorHeaders });
+        flipResponse = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/${paperNo}`, { headers: editorHeaders });
         console.log(`[DEBUG] Detail GET Editor: ${flipResponse.status}`);
       }
       if (!flipResponse.ok) {
@@ -656,7 +656,7 @@ export async function registerRoutes(
       });
       console.log(`[DEBUG] PUT detail fetch LMS: ${detailRes.status}`);
       if (!detailRes.ok) {
-        detailRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/${paperNo}`, {
+        detailRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/${paperNo}`, {
           headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
         });
         console.log(`[DEBUG] PUT detail fetch Editor: ${detailRes.status}`);
@@ -690,7 +690,7 @@ export async function registerRoutes(
           console.log(`[DEBUG] LMS shadowing ${edit.shadowingNo} update: ${sRes.status}`);
           if (!sRes.ok) {
             sRes = await fetch(
-              `https://editor.flipedu.app/api/flipedu/branch/shadowings`,
+              `https://dev.lms.flipedu.net/api/flipedu/branch/shadowings`,
               { method: "PUT", headers: editorHeaders, body: JSON.stringify(shadowingPayload) }
             );
             console.log(`[DEBUG] Editor shadowing ${edit.shadowingNo} update: ${sRes.status}`);
@@ -720,7 +720,7 @@ export async function registerRoutes(
           console.log(`[DEBUG] LMS create shadowing: ${cRes.status}`);
           if (!cRes.ok) {
             cRes = await fetch(
-              `https://editor.flipedu.app/api/flipedu/branch/shadowings`,
+              `https://dev.lms.flipedu.net/api/flipedu/branch/shadowings`,
               { method: "POST", headers: editorHeaders, body: JSON.stringify([newShadowing]) }
             );
             console.log(`[DEBUG] Editor create shadowing: ${cRes.status}`);
@@ -759,7 +759,7 @@ export async function registerRoutes(
       console.log(`[DEBUG] LMS paper update: ${updateRes.status}`);
       if (!updateRes.ok) {
         updateRes = await fetch(
-          `https://editor.flipedu.app/api/flipedu/branch/shadowing-paper/${paperNo}`,
+          `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-paper/${paperNo}`,
           { method: "PUT", headers: editorHeaders, body: JSON.stringify(updateBody) }
         );
         console.log(`[DEBUG] Editor paper update: ${updateRes.status}`);
@@ -799,7 +799,7 @@ export async function registerRoutes(
 
       if (!flipResponse.ok && flipResponse.status !== 204) {
         flipResponse = await fetch(
-          `https://editor.flipedu.app/api/flipedu/branch/shadowing-papers?paperNos=${paperNo}`,
+          `https://dev.lms.flipedu.net/api/flipedu/branch/shadowing-papers?paperNos=${paperNo}`,
           {
             method: "DELETE",
             headers: {
@@ -840,7 +840,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=eng", { headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/question-paper/classifys/all?subjectGroup=eng", { headers: editorHeaders });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys/all?subjectGroup=eng", { headers: editorHeaders });
       }
       if (!flipRes.ok) {
         // On 429 or other rate limit, return cached stale data if available, else error
@@ -867,7 +867,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/question-paper/classifys", { method: "POST", headers: lmsHeaders, body: JSON.stringify(body) });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/question-paper/classifys", { method: "POST", headers: editorHeaders, body: JSON.stringify(body) });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys", { method: "POST", headers: editorHeaders, body: JSON.stringify(body) });
       }
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "카테고리 생성에 실패했습니다." });
       const data = await flipRes.json();
@@ -890,7 +890,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/question-paper/classifys", { method: "PUT", headers: lmsHeaders, body: JSON.stringify(body) });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/question-paper/classifys", { method: "PUT", headers: editorHeaders, body: JSON.stringify(body) });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys", { method: "PUT", headers: editorHeaders, body: JSON.stringify(body) });
       }
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "카테고리 수정에 실패했습니다." });
       const data = await flipRes.json();
@@ -911,7 +911,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch(`https://lms.flipedu.net/api/branch/question-paper/classifys/${classifyNo}`, { method: "DELETE", headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-paper/classifys?classifyNos=${classifyNo}`, { method: "DELETE", headers: editorHeaders });
+        flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys?classifyNos=${classifyNo}`, { method: "DELETE", headers: editorHeaders });
       }
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "카테고리 삭제에 실패했습니다." });
       clearCache(`qpcat:${req.session.username}`);
@@ -925,7 +925,7 @@ export async function registerRoutes(
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const paperNo = req.params.paperNo;
-      const flipRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-paper/${paperNo}`, {
+      const flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
         headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
       });
       const text = await flipRes.text();
@@ -944,7 +944,7 @@ export async function registerRoutes(
       const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
       const search = req.query.integrateSearch as string;
 
-      let url = `https://editor.flipedu.app/api/flipedu/branch/question-papers?subjectGroup=eng&page=${pageNum}&size=${sizeNum}`;
+      let url = `https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?subjectGroup=eng&page=${pageNum}&size=${sizeNum}`;
       if (classifyNo && !isNaN(Number(classifyNo))) url += `&classifyNo=${classifyNo}`;
       if (search?.trim()) url += `&integrateSearch=${encodeURIComponent(search.trim())}`;
 
@@ -963,7 +963,7 @@ export async function registerRoutes(
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const paperNo = req.params.paperNo;
-      const flipRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-paper/${paperNo}`, {
+      const flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
         headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
       });
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "학습지 상세를 불러올 수 없습니다." });
@@ -1016,7 +1016,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch(`https://lms.flipedu.net/api/branch/question-papers?paperNos=${paperNo}`, { method: "DELETE", headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-papers?paperNos=${paperNo}`, { method: "DELETE", headers: editorHeaders });
+        flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?paperNos=${paperNo}`, { method: "DELETE", headers: editorHeaders });
       }
       if (!flipRes.ok && flipRes.status !== 204) return res.status(flipRes.status).json({ message: "학습지 삭제에 실패했습니다." });
       res.json({ success: true });
@@ -1041,7 +1041,7 @@ export async function registerRoutes(
       // Determine subjectGroup from existing paper
       let subjectGroup = "eng";
       try {
-        const existingRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-paper/${paperNo}`, {
+        const existingRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
           headers: { "Accept": "application/json", "Cookie": cookies },
         });
         if (existingRes.ok) {
@@ -1057,7 +1057,7 @@ export async function registerRoutes(
         method: "POST", headers: lmsHeaders, body: JSON.stringify(questionItems),
       });
       if (!questionsRes.ok) {
-        questionsRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/questions", {
+        questionsRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/questions", {
           method: "POST", headers: editorHeaders, body: JSON.stringify(questionItems),
         });
       }
@@ -1109,7 +1109,7 @@ export async function registerRoutes(
       });
       console.log(`[DEBUG] LMS PUT question-paper: ${paperRes.status}`);
       if (!paperRes.ok) {
-        paperRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-paper/${paperNo}`, {
+        paperRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
           method: "PUT", headers: editorHeaders, body: JSON.stringify(paperBody),
         });
         console.log(`[DEBUG] Editor PUT question-paper: ${paperRes.status}`);
@@ -1126,7 +1126,7 @@ export async function registerRoutes(
         method: "POST", headers: lmsHeaders, body: JSON.stringify(paperBody),
       });
       if (!fallbackRes.ok) {
-        fallbackRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/question-paper", {
+        fallbackRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper", {
           method: "POST", headers: editorHeaders, body: JSON.stringify(paperBody),
         });
       }
@@ -1142,7 +1142,7 @@ export async function registerRoutes(
           method: "DELETE", headers: lmsHeaders,
         });
         if (!delRes.ok) {
-          await fetch(`https://editor.flipedu.app/api/flipedu/branch/question-papers?paperNos=${paperNo}`, {
+          await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?paperNos=${paperNo}`, {
             method: "DELETE", headers: editorHeaders,
           });
         }
@@ -1183,7 +1183,7 @@ export async function registerRoutes(
       console.log(`[DEBUG] LMS questions create: ${createQuestionsRes.status}`);
       if (!createQuestionsRes.ok) {
         createQuestionsRes = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/questions",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/questions",
           { method: "POST", headers: editorHeaders, body: JSON.stringify(questionItems) }
         );
         console.log(`[DEBUG] Editor questions create: ${createQuestionsRes.status}`);
@@ -1244,7 +1244,7 @@ export async function registerRoutes(
       console.log(`[DEBUG] LMS question-paper create: ${paperRes.status}`);
       if (!paperRes.ok) {
         paperRes = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/question-paper",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/question-paper",
           { method: "POST", headers: editorHeaders, body: JSON.stringify(paperBody) }
         );
         console.log(`[DEBUG] Editor question-paper create: ${paperRes.status}`);
@@ -1284,10 +1284,10 @@ export async function registerRoutes(
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/video/classifys/all", { headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/video/classifys/all", { headers: editorHeaders });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/video/classifys/all", { headers: editorHeaders });
       }
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/video-classifys", { headers: editorHeaders });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/video-classifys", { headers: editorHeaders });
       }
       if (!flipRes.ok) {
         const stale = apiCache.get(cacheKey);
@@ -1314,7 +1314,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/video/classifys", { method: "POST", headers: lmsHeaders, body: JSON.stringify(body) });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/video/classifys", { method: "POST", headers: editorHeaders, body: JSON.stringify(body) });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/video/classifys", { method: "POST", headers: editorHeaders, body: JSON.stringify(body) });
       }
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "카테고리 생성에 실패했습니다." });
       const data = await flipRes.json();
@@ -1337,7 +1337,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/video/classifys", { method: "PUT", headers: lmsHeaders, body: JSON.stringify(body) });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/branch/video/classifys", { method: "PUT", headers: editorHeaders, body: JSON.stringify(body) });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/video/classifys", { method: "PUT", headers: editorHeaders, body: JSON.stringify(body) });
       }
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "카테고리 수정에 실패했습니다." });
       const data = await flipRes.json();
@@ -1358,7 +1358,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch(`https://lms.flipedu.net/api/branch/video/classifys/${classifyNo}`, { method: "DELETE", headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/video/classifys?classifyNos=${classifyNo}`, { method: "DELETE", headers: editorHeaders });
+        flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/video/classifys?classifyNos=${classifyNo}`, { method: "DELETE", headers: editorHeaders });
       }
       if (!flipRes.ok) return res.status(flipRes.status).json({ message: "카테고리 삭제에 실패했습니다." });
       clearCache(`videocat:${req.session.username}`);
@@ -1380,7 +1380,7 @@ export async function registerRoutes(
       const classifyNo = req.query.classifyNo as string;
       const search = req.query.integrateSearch as string;
 
-      let url = `https://editor.flipedu.app/api/flipedu/branch/videos?page=${pageNum}&size=${sizeNum}`;
+      let url = `https://dev.lms.flipedu.net/api/flipedu/branch/videos?page=${pageNum}&size=${sizeNum}`;
       if (classifyNo && !isNaN(Number(classifyNo))) url += `&classifyNo=${classifyNo}`;
       if (search?.trim()) url += `&integrateSearch=${encodeURIComponent(search.trim())}`;
 
@@ -1394,7 +1394,7 @@ export async function registerRoutes(
         console.log(`[DEBUG] LMS videos list: ${flipRes.status}`);
       }
       if (!flipRes.ok) {
-        flipRes = await fetch("https://editor.flipedu.app/api/flipedu/my/videos", { headers: editorHeaders });
+        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/my/videos", { headers: editorHeaders });
         console.log(`[DEBUG] Editor my/videos fallback: ${flipRes.status}`);
       }
       if (!flipRes.ok) {
@@ -1444,7 +1444,7 @@ export async function registerRoutes(
         formData2.append("name", title.trim());
         if (categoryId) formData2.append("classifyNo", String(categoryId));
         flipRes = await fetch(
-          "https://editor.flipedu.app/api/flipedu/branch/videos",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/videos",
           { method: "POST", headers: editorHeaders, body: formData2 }
         );
         console.log(`[DEBUG] Editor video upload: ${flipRes.status}`);
@@ -1476,7 +1476,7 @@ export async function registerRoutes(
 
       let flipRes = await fetch(`https://lms.flipedu.net/api/branch/videos?videoNos=${videoNo}`, { method: "DELETE", headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch(`https://editor.flipedu.app/api/flipedu/branch/videos?videoNos=${videoNo}`, { method: "DELETE", headers: editorHeaders });
+        flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/videos?videoNos=${videoNo}`, { method: "DELETE", headers: editorHeaders });
       }
       if (!flipRes.ok && flipRes.status !== 204) return res.status(flipRes.status).json({ message: "영상 삭제에 실패했습니다." });
       res.json({ success: true });
@@ -1514,7 +1514,7 @@ export async function registerRoutes(
 
         // 2. Try editor branch endpoint
         if (!r.ok) {
-          r = await fetch(`https://editor.flipedu.app/api/flipedu/branch/question/subjects/all?subjectGroup=${sg}`, { headers: editorHeaders });
+          r = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects/all?subjectGroup=${sg}`, { headers: editorHeaders });
           console.log(`[SUBJECTS] Editor branch ${r.status} (subjectGroup=${sg})`);
         }
 
@@ -1528,7 +1528,7 @@ export async function registerRoutes(
 
         if (result.length === 0) {
           // Try global subjects endpoint
-          const gr = await fetch(`https://editor.flipedu.app/api/flipedu/question/subjects/all?subjectGroup=${sg}`, { headers: editorHeaders });
+          const gr = await fetch(`https://dev.lms.flipedu.net/api/flipedu/question/subjects/all?subjectGroup=${sg}`, { headers: editorHeaders });
           console.log(`[SUBJECTS] Editor global ${gr.status} (subjectGroup=${sg})`);
           if (gr.ok) {
             const gd: any = await gr.json();
@@ -1582,7 +1582,7 @@ export async function registerRoutes(
       console.log(`[QUESTION-BANK] LMS ${r.status}`);
       if (!r.ok) {
         // Try editor fallback
-        const editorUrl = url.replace("https://lms.flipedu.net/api/branch/", "https://editor.flipedu.app/api/flipedu/branch/");
+        const editorUrl = url.replace("https://lms.flipedu.net/api/branch/", "https://dev.lms.flipedu.net/api/flipedu/branch/");
         r = await fetch(editorUrl, { headers: editorHeaders2 });
         console.log(`[QUESTION-BANK] Editor ${r.status}`);
       }
@@ -1604,7 +1604,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "학원명을 입력해주세요." });
       }
       const flipResponse = await fetch(
-        `https://editor.flipedu.app/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
+        `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(name.trim())}`,
         { headers: { "Accept": "application/json" } }
       );
       if (!flipResponse.ok) {
@@ -1624,7 +1624,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "brandNo가 필요합니다." });
       }
       const flipResponse = await fetch(
-        `https://editor.flipedu.app/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
+        `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(brandNo)}`,
         { headers: { "Accept": "application/json" } }
       );
       if (!flipResponse.ok) {
@@ -1653,20 +1653,20 @@ export async function registerRoutes(
 
       const primaryBody = {
         sysSeq: 0,
-        brand: Number(input.brandNo),
+        brand: String(input.brandNo),
         type: "STAFF",
-        branch: Number(input.branchNo),
+        branch: String(input.branchNo),
         username: input.username,
         password: plainPassword,
       };
       // Run both logins in parallel: www.flipedu.net for x-auth-token, editor.flipedu.app for cookies
       const [netResult, appResult] = await Promise.allSettled([
-        fetch("https://www.flipedu.net/api/v2/login", {
+        fetch("https://dev.flipedu.net/api/v2/login", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Accept": "application/json" },
           body: JSON.stringify(primaryBody),
         }),
-        fetch("https://editor.flipedu.app/api/auth/login", {
+        fetch("https://dev.lms.flipedu.net/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ brandNo: input.brandNo, branchNo: input.branchNo, username: input.username, credential: input.credential }),
@@ -1735,8 +1735,8 @@ export async function registerRoutes(
       req.session.branchName = input.branchName || "";
       req.session.flipCookies = cookieStr;
       req.session.flipCredential = input.credential;
-      req.session.flipBrandNo = input.brandNo;
-      req.session.flipBranchNo = input.branchNo;
+      req.session.flipBrandNo = Number(input.brandNo);
+      req.session.flipBranchNo = Number(input.branchNo);
       const sgNameRaw = data?.user?.subjectGroupName || "eng";
       req.session.subjectGroupName = Array.isArray(sgNameRaw) ? sgNameRaw.join(",") : String(sgNameRaw);
       console.log(`[AUTH] subjectGroupName stored: ${req.session.subjectGroupName}`);
@@ -1747,15 +1747,15 @@ export async function registerRoutes(
         const lH: Record<string, string> = { "Accept": "application/json" };
         if (xAuthToken && xAuthToken !== "authenticated") lH["x-auth-token"] = xAuthToken;
         const probes = [
-          "https://editor.flipedu.app/api/flipedu/my/videos",
-          "https://editor.flipedu.app/api/flipedu/branch/videos",
-          "https://editor.flipedu.app/api/flipedu/branch/video/classifys/all",
-          "https://editor.flipedu.app/api/flipedu/my/video/classifys/all",
-          "https://editor.flipedu.app/api/flipedu/branch/video-classifys",
+          "https://dev.lms.flipedu.net/api/flipedu/my/videos",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/videos",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/video/classifys/all",
+          "https://dev.lms.flipedu.net/api/flipedu/my/video/classifys/all",
+          "https://dev.lms.flipedu.net/api/flipedu/branch/video-classifys",
           "https://lms.flipedu.net/api/my/videos",
           "https://lms.flipedu.net/api/branch/videos",
           "https://lms.flipedu.net/api/branch/video/classifys/all",
-          "https://editor.flipedu.app/api/flipedu/v2/api-docs",
+          "https://dev.lms.flipedu.net/api/flipedu/v2/api-docs",
         ];
         for (const url of probes) {
           try {
@@ -1806,7 +1806,7 @@ export async function registerRoutes(
       }
       const trimmed = token.trim();
       // Verify the token works by calling www.flipedu.net
-      const verifyRes = await fetch("https://www.flipedu.net/api/v2/questions?page=0&size=1&subjectGroupName=eng", {
+      const verifyRes = await fetch("https://dev.flipedu.net/api/v2/questions?page=0&size=1&subjectGroupName=eng", {
         headers: { "Accept": "application/json", "x-auth-token": trimmed },
       });
       console.log(`[AUTH] update-token verify: ${verifyRes.status}`);
@@ -1841,7 +1841,7 @@ export async function registerRoutes(
         let plainPassword = req.session.flipCredential;
         try { plainPassword = decodeURIComponent(Buffer.from(req.session.flipCredential, "base64").toString("utf8")); } catch {}
         try {
-          const r = await fetch("https://www.flipedu.net/api/v2/login", {
+          const r = await fetch("https://dev.flipedu.net/api/v2/login", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
             body: JSON.stringify({
@@ -1880,7 +1880,7 @@ export async function registerRoutes(
         const chunk = toUpdate.slice(i, i + BATCH);
         await Promise.all(chunk.map(async q => {
           try {
-            const r = await fetch(`https://www.flipedu.net/api/v2/questions/${q.questionNo}?view=FULL`, {
+            const r = await fetch(`https://dev.flipedu.net/api/v2/questions/${q.questionNo}?view=FULL`, {
               headers: { "Accept": "application/json, text/plain, */*", ...( effectiveToken ? { "x-auth-token": effectiveToken } : {}), ...(cookieStr ? { "Cookie": cookieStr } : {}) },
             });
             if (r.ok) {
@@ -1937,8 +1937,8 @@ export async function registerRoutes(
 
           // Try multiple endpoints: www.flipedu.net v2 → editor.flipedu.net v2 → lms fallback
           const putEndpoints = [
-            { url: `https://www.flipedu.net/api/v2/questions/${q.questionNo}`, headers: baseHeaders },
-            { url: `https://editor.flipedu.net/api/v2/questions/${q.questionNo}`, headers: { ...baseHeaders } },
+            { url: `https://dev.flipedu.net/api/v2/questions/${q.questionNo}`, headers: baseHeaders },
+            { url: `https://dev.lms.flipedu.net/api/v2/questions/${q.questionNo}`, headers: { ...baseHeaders } },
           ];
           let saved = false;
           for (const ep of putEndpoints) {
@@ -2293,7 +2293,7 @@ ${count}개의 유사 문제를 다음 JSON 형식으로만 반환하세요. 설
   // GET /api/debug/swagger — proxy FlipEdu Swagger docs (auth required)
   app.get("/api/debug/swagger", async (req, res) => {
     if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
-    const target = (req.query.url as string) || "https://editor.flipedu.app/api/flipedu/v3/api-docs";
+    const target = (req.query.url as string) || "https://dev.lms.flipedu.net/api/flipedu/v3/api-docs";
     try {
       const r = await fetch(target, {
         headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },

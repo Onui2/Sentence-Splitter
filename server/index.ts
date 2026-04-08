@@ -48,17 +48,6 @@ app.use(
   }),
 );
 
-// Auto-login in development mode
-if (process.env.NODE_ENV === "development") {
-  app.use((req, res, next) => {
-    if (!req.session.username) {
-      req.session.username = "local_admin";
-      req.session.authToken = "local_dev_token";
-      req.session.flipCookies = ""; // Placeholder for FlipEdu integration
-    }
-    next();
-  });
-}
 
 app.use("/api/ai/extract-questions", express.json({ limit: "20mb" }));
 
