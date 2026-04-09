@@ -11,6 +11,7 @@
     { "source": "/api/flip-categories/(.*)", "destination": "/api/flip-categories/[classifyNo].ts" },
     { "source": "/api/question-paper-categories", "destination": "/api/question-paper-categories/index.ts" },
     { "source": "/api/question-paper-categories/(.*)", "destination": "/api/question-paper-categories/[classifyNo].ts" },
+    { "source": "/api/question-subjects", "destination": "/api/question-subjects.ts" },
     {
       "source": "/(.*)",
       "destination": "/index.html"
