@@ -142,9 +142,12 @@ export default async function handler(req: any, res: any) {
       if (classifyNo) search.set("classifyNo", classifyNo);
       if (integrateSearch) search.set("integrateSearch", integrateSearch);
 
-      let r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?${search.toString()}`, { headers: editorHeaders });
+      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?${search.toString()}`, { headers: lmsHeaders });
       if (!r.ok) {
-        r = await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?${search.toString()}`, { headers: lmsHeaders });
+        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?${search.toString()}`, { headers: editorHeaders });
+      }
+      if (!r.ok) {
+        r = await fetchFn(`https://dev.mstr.flipedu.net/api/branch/question-papers?${search.toString()}`, { headers: lmsHeaders });
       }
       if (!r.ok) {
         return res.status(r.status).json({ message: "?숈뒿吏瑜?遺덈윭?????놁뒿?덈떎." });
