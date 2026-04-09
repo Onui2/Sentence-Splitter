@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { api } from "../../shared/routes";
 import {
   createAuthHeaders,
   getAuthFromRequest,
@@ -8,6 +7,28 @@ import {
   getPrimarySubjectGroup,
   parseRequestBody,
 } from "../../vercel-handlers/api/_lib/flip-auth";
+
+const createQuestionPaperSchema = z.object({
+  title: z.string().min(1),
+  categoryId: z.number().optional(),
+  shared: z.boolean().optional(),
+  questions: z.array(z.object({
+    questionType: z.enum(["CHOICE", "SHORT_ANSWER"]),
+    question: z.string().min(1),
+    body: z.string().optional(),
+    choices: z.array(z.string()).optional(),
+    correctAnswer: z.number().optional(),
+    answerText: z.string().optional(),
+    gradingCaseSensitive: z.boolean().optional(),
+    gradingSpecialChars: z.boolean().optional(),
+    gradingSpacing: z.boolean().optional(),
+    gradingOr: z.boolean().optional(),
+    explanation: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    categoryId: z.number().optional(),
+    score: z.number().optional(),
+  })),
+});
 
 function buildQuestionItem(q: any, subjectGroup: string) {
   const item: any = {
@@ -96,7 +117,7 @@ export default async function handler(req: any, res: any) {
     }
 
     if (req.method === "POST") {
-      const input = api.questionPaperCreate.create.input.parse(parseRequestBody(req.body));
+      const input = createQuestionPaperSchema.parse(parseRequestBody(req.body));
       const questionItems = input.questions.map((q) => buildQuestionItem(q, subjectGroup));
 
       let questionsRes = await fetchFn("https://lms.flipedu.net/api/branch/questions", {

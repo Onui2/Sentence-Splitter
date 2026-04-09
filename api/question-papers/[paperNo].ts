@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { api } from "../../shared/routes";
 import {
   createAuthHeaders,
   getAuthFromRequest,
@@ -8,6 +7,27 @@ import {
   getPrimarySubjectGroup,
   parseRequestBody,
 } from "../../vercel-handlers/api/_lib/flip-auth";
+
+const updateQuestionPaperSchema = z.object({
+  title: z.string().min(1),
+  categoryId: z.number().optional(),
+  questions: z.array(z.object({
+    questionType: z.enum(["CHOICE", "SHORT_ANSWER"]),
+    question: z.string().min(1),
+    body: z.string().optional(),
+    choices: z.array(z.string()).optional(),
+    correctAnswer: z.number().optional(),
+    answerText: z.string().optional(),
+    gradingCaseSensitive: z.boolean().optional(),
+    gradingSpecialChars: z.boolean().optional(),
+    gradingSpacing: z.boolean().optional(),
+    gradingOr: z.boolean().optional(),
+    explanation: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    categoryId: z.number().optional(),
+    score: z.number().optional(),
+  })),
+});
 
 function buildQuestionItem(q: any, subjectGroup: string) {
   const item: any = {
@@ -89,7 +109,7 @@ export default async function handler(req: any, res: any) {
     }
 
     if (req.method === "PUT") {
-      const input = api.questionPapers.update.input.parse(parseRequestBody(req.body));
+      const input = updateQuestionPaperSchema.parse(parseRequestBody(req.body));
 
       let subjectGroup = getPrimarySubjectGroup(auth);
       try {
