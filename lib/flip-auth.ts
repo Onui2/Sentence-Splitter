@@ -85,7 +85,11 @@ export function createAuthHeaders(authToken: string): Record<string, string> {
 }
 
 export function createEditorHeaders(authToken: string, upstreamCookies: string): Record<string, string> {
-  const headers = createAuthHeaders(authToken);
+  void authToken;
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
   if (upstreamCookies) {
     headers.Cookie = upstreamCookies;
   }

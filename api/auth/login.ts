@@ -56,7 +56,7 @@ function encodeAuthCookie(payload: AuthCookiePayload): string {
 }
 
 function buildAuthSetCookie(value: string): string {
-  const maxAge = 60 * 60 * 24; // 1 day
+  const maxAge = 60 * 60 * 24;
   return `ss_auth=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
@@ -65,7 +65,7 @@ function encodeOpaqueCookieValue(value: string): string {
 }
 
 function buildUpstreamSetCookie(value: string): string {
-  const maxAge = 60 * 60 * 24; // 1 day
+  const maxAge = 60 * 60 * 24;
   return `ss_flip=${encodeOpaqueCookieValue(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
@@ -111,14 +111,19 @@ async function tryFlipLogin(
   };
 
   const attempts = [
-    { url: "https://www.flipedu.net/api/v2/login", body: primaryBody },
-    { url: "https://dev.flipedu.net/api/v2/login", body: primaryBody },
     { url: "https://lms.flipedu.net/api/auth/login", body: lmsBody },
     { url: "https://dev.lms.flipedu.net/api/auth/login", body: lmsBody },
     { url: "https://dev.mstr.flipedu.net/api/auth/login", body: lmsBody },
+    { url: "https://www.flipedu.net/api/v2/login", body: primaryBody },
+    { url: "https://dev.flipedu.net/api/v2/login", body: primaryBody },
   ];
 
-  let lastMessage = "로그인에 실패했습니다.";
+  let lastMessage = "濡쒓렇?몄뿉 ?ㅽ뙣?덉뒿?덈떎.";
+  let authenticated = false;
+  let token = "";
+  let subjectGroupName = "eng";
+  let upstreamCookies = "";
+
   for (const attempt of attempts) {
     try {
       const r = await fetch(attempt.url, {
@@ -134,30 +139,52 @@ async function tryFlipLogin(
 
       const data: any = await r.json().catch(() => ({}));
       if (r.ok) {
-        const token =
+        authenticated = true;
+
+        const currentToken =
           r.headers.get("x-auth-token") ||
           data?.token ||
           data?.authToken ||
           data?.user?.token ||
           "";
-        const subjectGroupNameRaw = data?.subjectGroupName || data?.user?.subjectGroupName || "eng";
-        const subjectGroupName = Array.isArray(subjectGroupNameRaw)
+        const subjectGroupNameRaw = data?.subjectGroupName || data?.user?.subjectGroupName || subjectGroupName || "eng";
+        const currentSubjectGroupName = Array.isArray(subjectGroupNameRaw)
           ? subjectGroupNameRaw.join(",")
           : String(subjectGroupNameRaw || "eng");
-        return {
-          ok: true as const,
-          token,
-          subjectGroupName,
-          upstreamCookies: parseSetCookies(r.headers),
-        };
+        const currentUpstreamCookies = parseSetCookies(r.headers);
+
+        if (currentToken && !token) token = currentToken;
+        if (currentSubjectGroupName) subjectGroupName = currentSubjectGroupName;
+        if (currentUpstreamCookies && !upstreamCookies) upstreamCookies = currentUpstreamCookies;
+
+        if (token && upstreamCookies) {
+          return {
+            ok: true,
+            token,
+            subjectGroupName,
+            upstreamCookies,
+          };
+        }
+
+        continue;
       }
+
       lastMessage = data?.message || data?.error || lastMessage;
     } catch {
       // continue next attempt
     }
   }
 
-  return { ok: false as const, message: lastMessage };
+  if (authenticated) {
+    return {
+      ok: true,
+      token,
+      subjectGroupName,
+      upstreamCookies,
+    };
+  }
+
+  return { ok: false, message: lastMessage };
 }
 
 export default async function handler(req: any, res: any) {
@@ -171,7 +198,7 @@ export default async function handler(req: any, res: any) {
     const credential = String(body.credential ?? "").trim();
 
     if (!brandNo || !branchNo || !username || !credential) {
-      return res.status(400).json({ message: "모든 필드를 입력해주세요." });
+      return res.status(400).json({ message: "紐⑤뱺 ?꾨뱶瑜??낅젰?댁＜?몄슂." });
     }
 
     const loginResult = await tryFlipLogin({ brandNo, branchNo, username, credential });
@@ -199,6 +226,6 @@ export default async function handler(req: any, res: any) {
     res.setHeader("Set-Cookie", cookies);
     return res.json({ success: true });
   } catch {
-    return res.status(500).json({ message: "로그인 처리 중 오류가 발생했습니다." });
+    return res.status(500).json({ message: "濡쒓렇??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
   }
 }
