@@ -1,3 +1,10 @@
+type AuthCookiePayload = {
+  authenticated?: boolean;
+  username?: string;
+  authToken?: string;
+  subjectGroupName?: string;
+};
+
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   if (!cookieHeader) return {};
   return cookieHeader.split(";").reduce((acc, part) => {
@@ -8,7 +15,7 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   }, {} as Record<string, string>);
 }
 
-function decodeAuthCookie(raw: string | undefined): any | null {
+function decodeAuthCookie(raw: string | undefined): AuthCookiePayload | null {
   if (!raw) return null;
   try {
     const json = Buffer.from(raw, "base64url").toString("utf8");
@@ -18,9 +25,22 @@ function decodeAuthCookie(raw: string | undefined): any | null {
   }
 }
 
-function getAuthFromRequest(req: any): any | null {
+function getAuthFromRequest(req: any): AuthCookiePayload | null {
   const cookies = parseCookies(req?.headers?.cookie);
   return decodeAuthCookie(cookies.ss_auth);
+}
+
+function getAuthTokenFromRequest(req: any, auth: AuthCookiePayload | null): string {
+  const headerToken =
+    (typeof req?.headers?.["x-auth-token"] === "string" && req.headers["x-auth-token"]) ||
+    (typeof req?.headers?.authorization === "string" && req.headers.authorization.startsWith("Bearer ")
+      ? req.headers.authorization.slice("Bearer ".length)
+      : "");
+  return headerToken || auth?.authToken || "";
+}
+
+function normalizeList(data: any): any[] {
+  return Array.isArray(data) ? data : (data?.content ?? data?.data ?? data?.subjects ?? data?.list ?? []);
 }
 
 async function getFetch(): Promise<typeof fetch> {
@@ -32,50 +52,51 @@ async function getFetch(): Promise<typeof fetch> {
 export default async function handler(req: any, res: any) {
   try {
     const auth = getAuthFromRequest(req);
-    if (!auth?.authenticated || !auth?.username || !auth?.authToken) {
+    const authToken = getAuthTokenFromRequest(req, auth);
+
+    if (!auth?.authenticated || !auth?.username || !authToken) {
       return res.status(401).json({ message: "인증이 필요합니다." });
     }
 
     const fetchFn = await getFetch();
     const headers: Record<string, string> = {
       Accept: "application/json",
-      "x-auth-token": auth.authToken,
+      "x-auth-token": authToken,
+      Origin: "https://teacher.flipedu.net",
+      Referer: "https://teacher.flipedu.net/",
     };
 
-    const rawGroup = typeof req.query?.subjectGroup === "string" && req.query.subjectGroup.trim()
-      ? req.query.subjectGroup
-      : (typeof auth.subjectGroupName === "string" && auth.subjectGroupName.trim()
-          ? auth.subjectGroupName
-          : "eng");
+    const rawQueryGroup = req.query?.subjectGroup;
+    const rawGroup = (Array.isArray(rawQueryGroup) ? rawQueryGroup.join(",") : rawQueryGroup)
+      || auth.subjectGroupName
+      || "eng";
     const subjectGroups = String(rawGroup).split(",").map((g) => g.trim()).filter(Boolean);
 
     const fetchSubjectsForGroup = async (subjectGroup: string): Promise<any[]> => {
-      let r = await fetchFn(
-        `https://lms.flipedu.net/api/branch/question/subjects/all?subjectGroup=${encodeURIComponent(subjectGroup)}`,
-        { headers }
-      );
-      if (!r.ok) {
-        r = await fetchFn(
-          `https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects/all?subjectGroup=${encodeURIComponent(subjectGroup)}`,
-          { headers }
-        );
-      }
-      if (!r.ok) {
-        r = await fetchFn(
-          `https://dev.lms.flipedu.net/api/flipedu/question/subjects/all?subjectGroup=${encodeURIComponent(subjectGroup)}`,
-          { headers }
-        );
-      }
-      if (!r.ok) {
-        r = await fetchFn(
-          `https://dev.mstr.flipedu.net/api/branch/question/subjects/all?subjectGroup=${encodeURIComponent(subjectGroup)}`,
-          { headers }
-        );
-      }
-      if (!r.ok) return [];
+      const encoded = encodeURIComponent(subjectGroup);
+      const attempts = [
+        `https://www.flipedu.net/api/question/subjects/all?subjectGroup=${encoded}`,
+        `https://dev.flipedu.net/api/question/subjects/all?subjectGroup=${encoded}`,
+        `https://lms.flipedu.net/api/branch/question/subjects/all?subjectGroup=${encoded}`,
+        `https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects/all?subjectGroup=${encoded}`,
+        `https://dev.lms.flipedu.net/api/flipedu/question/subjects/all?subjectGroup=${encoded}`,
+        `https://dev.mstr.flipedu.net/api/branch/question/subjects/all?subjectGroup=${encoded}`,
+      ];
 
-      const data = await r.json().catch(() => []);
-      return Array.isArray(data) ? data : (data?.content ?? data?.data ?? data?.subjects ?? data?.list ?? []);
+      for (const url of attempts) {
+        try {
+          const response = await fetchFn(url, { headers });
+          if (!response.ok) continue;
+
+          const data = await response.json().catch(() => []);
+          const list = normalizeList(data);
+          if (list.length > 0) return list;
+        } catch {
+          // try next endpoint
+        }
+      }
+
+      return [];
     };
 
     const flattenSubjects = (nodes: any[], depth = 0): any[] => {
@@ -88,6 +109,7 @@ export default async function handler(req: any, res: any) {
           level: node.level ?? depth,
           ordering: node.ordering ?? 0,
         });
+
         if (Array.isArray(node.children) && node.children.length > 0) {
           result.push(...flattenSubjects(node.children, depth + 1));
         }
@@ -99,6 +121,10 @@ export default async function handler(req: any, res: any) {
     for (const subjectGroup of subjectGroups) {
       const nodes = await fetchSubjectsForGroup(subjectGroup);
       allNodes.push(...flattenSubjects(nodes));
+    }
+
+    if (allNodes.length === 0) {
+      return res.status(502).json({ message: "문제 카테고리를 불러오지 못했습니다." });
     }
 
     return res.status(200).json(allNodes);

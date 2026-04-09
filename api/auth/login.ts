@@ -16,6 +16,7 @@ type AuthCookiePayload = {
   brandName?: string;
   branchName?: string;
   authToken?: string;
+  subjectGroupName?: string;
 };
 
 function parseBody(body: any): LoginBody {
@@ -85,7 +86,11 @@ async function tryFlipLogin(input: Required<Pick<LoginBody, "brandNo" | "branchN
           data?.authToken ||
           data?.user?.token ||
           "";
-        return { ok: true as const, token };
+        const subjectGroupNameRaw = data?.subjectGroupName || data?.user?.subjectGroupName || "eng";
+        const subjectGroupName = Array.isArray(subjectGroupNameRaw)
+          ? subjectGroupNameRaw.join(",")
+          : String(subjectGroupNameRaw || "eng");
+        return { ok: true as const, token, subjectGroupName };
       }
       lastMessage = data?.message || data?.error || lastMessage;
     } catch {
@@ -124,6 +129,7 @@ export default async function handler(req: any, res: any) {
       brandName: body.brandName ?? "",
       branchName: body.branchName ?? "",
       authToken: loginResult.token || "",
+      subjectGroupName: loginResult.subjectGroupName || "eng",
     };
 
     res.setHeader("Set-Cookie", buildAuthSetCookie(encodeAuthCookie(payload)));
@@ -132,4 +138,3 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ message: "로그인 처리 중 오류가 발생했습니다." });
   }
 }
-

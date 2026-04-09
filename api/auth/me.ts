@@ -4,6 +4,7 @@ type AuthCookiePayload = {
   academyName?: string;
   brandName?: string;
   branchName?: string;
+  subjectGroupName?: string;
 };
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
@@ -39,9 +40,9 @@ export default async function handler(req: any, res: any) {
       academyName: auth.academyName ?? "",
       brandName: auth.brandName ?? "",
       branchName: auth.branchName ?? "",
+      subjectGroupName: auth.subjectGroupName ?? "eng",
     });
   } catch {
     return res.status(500).json({ message: "인증 상태 조회 중 오류가 발생했습니다." });
   }
 }
-
