@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   createAuthHeaders,
+  createEditorHeaders,
   getAuthFromRequest,
   getAuthTokenFromRequest,
   getFetch,
   getPrimarySubjectGroup,
+  getUpstreamCookiesFromRequest,
   parseRequestBody,
 } from "../../lib/flip-auth";
 
@@ -77,17 +79,52 @@ function buildQuestionItem(q: any, subjectGroup: string) {
   return item;
 }
 
+async function parseUpstreamBody(response: Response): Promise<any> {
+  const text = await response.text().catch(() => "");
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function pickErrorMessage(data: any, fallback: string): string {
+  if (typeof data === "string" && data.trim()) return data;
+  if (data && typeof data === "object") {
+    return data.message || data.error || fallback;
+  }
+  return fallback;
+}
+
+function extractQuestionNos(data: any): number[] {
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.content)
+      ? data.content
+      : data
+        ? [data]
+        : [];
+
+  return list
+    .map((item: any) => Number(item?.questionNo ?? item?.id ?? item?.no))
+    .filter((value: number) => Number.isFinite(value) && value > 0);
+}
+
 export default async function handler(req: any, res: any) {
   try {
     const auth = getAuthFromRequest(req);
     const authToken = getAuthTokenFromRequest(req, auth);
 
     if (!auth?.authenticated || !auth?.username || !authToken) {
-      return res.status(401).json({ message: "인증이 필요합니다." });
+      return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
     }
 
     const fetchFn = await getFetch();
-    const headers = createAuthHeaders(authToken);
+    const upstreamCookies = getUpstreamCookiesFromRequest(req);
+    const lmsHeaders = createAuthHeaders(authToken);
+    const editorHeaders = createEditorHeaders(authToken, upstreamCookies);
     const subjectGroup = getPrimarySubjectGroup(auth);
 
     if (req.method === "GET") {
@@ -104,15 +141,15 @@ export default async function handler(req: any, res: any) {
       if (classifyNo) search.set("classifyNo", classifyNo);
       if (integrateSearch) search.set("integrateSearch", integrateSearch);
 
-      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?${search.toString()}`, { headers });
+      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?${search.toString()}`, { headers: lmsHeaders });
       if (!r.ok) {
-        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?${search.toString()}`, { headers });
+        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?${search.toString()}`, { headers: editorHeaders });
       }
       if (!r.ok) {
-        return res.status(r.status).json({ message: "학습지를 불러올 수 없습니다." });
+        return res.status(r.status).json({ message: "?숈뒿吏瑜?遺덈윭?????놁뒿?덈떎." });
       }
 
-      const data = await r.json();
+      const data = await parseUpstreamBody(r);
       return res.status(200).json(data);
     }
 
@@ -122,27 +159,29 @@ export default async function handler(req: any, res: any) {
 
       let questionsRes = await fetchFn("https://lms.flipedu.net/api/branch/questions", {
         method: "POST",
-        headers,
+        headers: lmsHeaders,
         body: JSON.stringify(questionItems),
       });
       if (!questionsRes.ok) {
         questionsRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/questions", {
           method: "POST",
-          headers,
+          headers: editorHeaders,
           body: JSON.stringify(questionItems),
         });
       }
       if (!questionsRes.ok) {
-        const errText = await questionsRes.text().catch(() => "");
+        const errorBody = await parseUpstreamBody(questionsRes);
         return res.status(questionsRes.status).json({
-          message: errText || "문항 생성에 실패했습니다.",
+          message: pickErrorMessage(errorBody, "臾명빆 ?앹꽦???ㅽ뙣?덉뒿?덈떎."),
         });
       }
 
-      const createdQuestions = await questionsRes.json();
-      const questionNos: number[] = Array.isArray(createdQuestions)
-        ? createdQuestions.map((q: any) => q.questionNo)
-        : [createdQuestions.questionNo];
+      const createdQuestions = await parseUpstreamBody(questionsRes);
+      const questionNos = extractQuestionNos(createdQuestions);
+      if (questionNos.length === 0) {
+        return res.status(502).json({ message: "臾명빆 ?앹꽦 ?묐떟??questionNo媛 ?놁뒿?덈떎." });
+      }
+
       const scoreList = questionNos.map((_, i) => input.questions[i]?.score || 1);
       const totalScore = scoreList.reduce((a, b) => a + b, 0);
       const perQuestion = Math.round(totalScore / (questionNos.length || 1));
@@ -166,24 +205,24 @@ export default async function handler(req: any, res: any) {
 
       let paperRes = await fetchFn("https://lms.flipedu.net/api/branch/question-paper", {
         method: "POST",
-        headers,
+        headers: lmsHeaders,
         body: JSON.stringify(paperBody),
       });
       if (!paperRes.ok) {
         paperRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper", {
           method: "POST",
-          headers,
+          headers: editorHeaders,
           body: JSON.stringify(paperBody),
         });
       }
       if (!paperRes.ok) {
-        const errText = await paperRes.text().catch(() => "");
+        const errorBody = await parseUpstreamBody(paperRes);
         return res.status(paperRes.status).json({
-          message: errText || "학습지 저장에 실패했습니다.",
+          message: pickErrorMessage(errorBody, "?숈뒿吏 ??μ뿉 ?ㅽ뙣?덉뒿?덈떎."),
         });
       }
 
-      const data = await paperRes.json();
+      const data = await parseUpstreamBody(paperRes);
       return res.status(201).json(data);
     }
 
@@ -191,10 +230,10 @@ export default async function handler(req: any, res: any) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
-        message: error.errors[0]?.message || "입력값이 올바르지 않습니다.",
+        message: error.errors[0]?.message || "?낅젰媛믪씠 ?щ컮瑜댁? ?딆뒿?덈떎.",
         field: error.errors[0]?.path?.join("."),
       });
     }
-    return res.status(500).json({ message: "학습지 처리 중 오류가 발생했습니다." });
+    return res.status(500).json({ message: "?숈뒿吏 泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
   }
 }

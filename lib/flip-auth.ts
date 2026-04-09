@@ -30,6 +30,18 @@ export function getAuthFromRequest(req: any): AuthCookiePayload | null {
   return decodeAuthCookie(cookies.ss_auth);
 }
 
+export function getUpstreamCookiesFromRequest(req: any): string {
+  const cookies = parseCookies(req?.headers?.cookie);
+  const raw = cookies.ss_flip;
+  if (!raw) return "";
+
+  try {
+    return Buffer.from(raw, "base64url").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
 export function getAuthTokenFromRequest(req: any, auth: AuthCookiePayload | null): string {
   const headerToken =
     (typeof req?.headers?.["x-auth-token"] === "string" && req.headers["x-auth-token"]) ||
@@ -70,4 +82,12 @@ export function createAuthHeaders(authToken: string): Record<string, string> {
     Origin: "https://teacher.flipedu.net",
     Referer: "https://teacher.flipedu.net/",
   };
+}
+
+export function createEditorHeaders(authToken: string, upstreamCookies: string): Record<string, string> {
+  const headers = createAuthHeaders(authToken);
+  if (upstreamCookies) {
+    headers.Cookie = upstreamCookies;
+  }
+  return headers;
 }
