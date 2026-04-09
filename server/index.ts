@@ -23,10 +23,7 @@ declare module "express-serve-static-core" {
 // cookie-session sets session on req.session 
 // Types are similar to express-session for our usage
 
-const sessionSecret = process.env.SESSION_SECRET;
-if (!sessionSecret) {
-  throw new Error("SESSION_SECRET environment variable is required");
-}
+const sessionSecret = process.env.SESSION_SECRET || "fallback_secret_for_vercel_deployments_if_missing";
 
 app.use(
   cookieSession({
