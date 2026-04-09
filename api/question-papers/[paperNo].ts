@@ -131,9 +131,9 @@ export default async function handler(req: any, res: any) {
     const editorHeaders = createEditorHeaders(authToken, upstreamCookies);
 
     if (req.method === "GET") {
-      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, { headers: lmsHeaders });
+      let r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, { headers: editorHeaders });
       if (!r.ok) {
-        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, { headers: editorHeaders });
+        r = await fetchFn(`https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, { headers: lmsHeaders });
       }
       if (!r.ok) {
         return res.status(r.status).json({ message: "?숈뒿吏 ?곸꽭瑜?遺덈윭?????놁뒿?덈떎." });
@@ -151,7 +151,7 @@ export default async function handler(req: any, res: any) {
 
       let subjectGroup = getPrimarySubjectGroup(auth);
       try {
-        const existing = await fetchFn(`https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, { headers: lmsHeaders });
+        const existing = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, { headers: editorHeaders });
         if (existing.ok) {
           const data = await parseUpstreamBody(existing);
           if (data?.subjectGroup) subjectGroup = String(data.subjectGroup);
