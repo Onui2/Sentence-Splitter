@@ -223,34 +223,36 @@ export async function registerRoutes(
     }
   });
 
-  // Seed data
-  const existingMaterials = await storage.getMaterials();
-  if (existingMaterials.length === 0) {
-    const sampleMaterial = await storage.createMaterial({
-      title: "Steve Jobs Stanford Commencement Speech",
-      description: "Practice one of the most famous graduation speeches."
-    });
-    
-    await storage.createSentence({
-      materialId: sampleMaterial.id,
-      originalText: "I am honored to be with you today at your commencement from one of the finest universities in the world.",
-      translation: "세계 최고의 대학 중 하나인 이곳에서 여러분의 졸업식에 함께하게 되어 영광입니다.",
-      orderIndex: 0
-    });
-    
-    await storage.createSentence({
-      materialId: sampleMaterial.id,
-      originalText: "I never graduated from college.",
-      translation: "저는 대학을 졸업하지 못했습니다.",
-      orderIndex: 1
-    });
-    
-    await storage.createSentence({
-      materialId: sampleMaterial.id,
-      originalText: "Truth be told, this is the closest I've ever gotten to a college graduation.",
-      translation: "사실대로 말하자면, 이것이 제가 대학 졸업식에 가장 가까이 와 본 것입니다.",
-      orderIndex: 2
-    });
+  // Seed data only if DATABASE_URL is present
+  if (process.env.DATABASE_URL) {
+    const existingMaterials = await storage.getMaterials();
+    if (existingMaterials.length === 0) {
+      const sampleMaterial = await storage.createMaterial({
+        title: "Steve Jobs Stanford Commencement Speech",
+        description: "Practice one of the most famous graduation speeches."
+      });
+      
+      await storage.createSentence({
+        materialId: sampleMaterial.id,
+        originalText: "I am honored to be with you today at your commencement from one of the finest universities in the world.",
+        translation: "세계 최고의 대학 중 하나인 이곳에서 여러분의 졸업식에 함께하게 되어 영광입니다.",
+        orderIndex: 0
+      });
+      
+      await storage.createSentence({
+        materialId: sampleMaterial.id,
+        originalText: "I never graduated from college.",
+        translation: "저는 대학을 졸업하지 못했습니다.",
+        orderIndex: 1
+      });
+      
+      await storage.createSentence({
+        materialId: sampleMaterial.id,
+        originalText: "Truth be told, this is the closest I've ever gotten to a college graduation.",
+        translation: "사실대로 말하자면, 이것이 제가 대학 졸업식에 가장 가까이 와 본 것입니다.",
+        orderIndex: 2
+      });
+    }
   }
 
 
