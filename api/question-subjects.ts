@@ -43,6 +43,11 @@ function normalizeList(data: any): any[] {
   return Array.isArray(data) ? data : (data?.content ?? data?.data ?? data?.subjects ?? data?.list ?? []);
 }
 
+function appendQuery(url: string, params: Record<string, string>): string {
+  const search = new URLSearchParams(params);
+  return `${url}?${search.toString()}`;
+}
+
 async function getFetch(): Promise<typeof fetch> {
   if (typeof (globalThis as any).fetch === "function") return (globalThis as any).fetch;
   const undici: any = await import("undici");
@@ -73,14 +78,33 @@ export default async function handler(req: any, res: any) {
     const subjectGroups = String(rawGroup).split(",").map((g) => g.trim()).filter(Boolean);
 
     const fetchSubjectsForGroup = async (subjectGroup: string): Promise<any[]> => {
-      const encoded = encodeURIComponent(subjectGroup);
       const attempts = [
-        `https://www.flipedu.net/api/question/subjects/all?subjectGroup=${encoded}`,
-        `https://dev.flipedu.net/api/question/subjects/all?subjectGroup=${encoded}`,
-        `https://lms.flipedu.net/api/branch/question/subjects/all?subjectGroup=${encoded}`,
-        `https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects/all?subjectGroup=${encoded}`,
-        `https://dev.lms.flipedu.net/api/flipedu/question/subjects/all?subjectGroup=${encoded}`,
-        `https://dev.mstr.flipedu.net/api/branch/question/subjects/all?subjectGroup=${encoded}`,
+        appendQuery("https://www.flipedu.net/api/v2/subjects/all", {
+          subjectGroupName: subjectGroup,
+          type: "QUESTION",
+        }),
+        appendQuery("https://dev.flipedu.net/api/v2/subjects/all", {
+          subjectGroupName: subjectGroup,
+          type: "QUESTION",
+        }),
+        appendQuery("https://lms.flipedu.net/api/question/subjects/all", {
+          subjectGroup,
+        }),
+        appendQuery("https://lms.flipedu.net/api/branch/question/subjects/all", {
+          subjectGroup,
+        }),
+        appendQuery("https://dev.lms.flipedu.net/api/flipedu/question/subjects/all", {
+          subjectGroup,
+        }),
+        appendQuery("https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects/all", {
+          subjectGroup,
+        }),
+        appendQuery("https://dev.mstr.flipedu.net/api/question/subjects/all", {
+          subjectGroup,
+        }),
+        appendQuery("https://dev.mstr.flipedu.net/api/branch/question/subjects/all", {
+          subjectGroup,
+        }),
       ];
 
       for (const url of attempts) {
