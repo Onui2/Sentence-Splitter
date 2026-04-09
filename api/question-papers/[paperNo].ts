@@ -6,7 +6,7 @@ import {
   getFetch,
   getPrimarySubjectGroup,
   parseRequestBody,
-} from "../../vercel-handlers/api/_lib/flip-auth";
+} from "../../lib/flip-auth";
 
 const updateQuestionPaperSchema = z.object({
   title: z.string().min(1),
