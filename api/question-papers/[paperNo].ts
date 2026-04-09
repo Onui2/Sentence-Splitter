@@ -170,7 +170,7 @@ export default async function handler(req: any, res: any) {
       if (!questionsRes.ok) {
         questionsRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/questions", {
           method: "POST",
-          headers: editorHeaders,
+          headers: { ...editorHeaders, "Content-Type": "application/json" },
           body: JSON.stringify(questionItems),
         });
       }
@@ -216,7 +216,7 @@ export default async function handler(req: any, res: any) {
       if (!paperRes.ok) {
         paperRes = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
           method: "PUT",
-          headers: editorHeaders,
+          headers: { ...editorHeaders, "Content-Type": "application/json" },
           body: JSON.stringify(paperBody),
         });
       }
@@ -234,7 +234,7 @@ export default async function handler(req: any, res: any) {
       if (!fallbackRes.ok) {
         fallbackRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper", {
           method: "POST",
-          headers: editorHeaders,
+          headers: { ...editorHeaders, "Content-Type": "application/json" },
           body: JSON.stringify(paperBody),
         });
       }

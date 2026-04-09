@@ -125,7 +125,8 @@ export default async function handler(req: any, res: any) {
     const upstreamCookies = getUpstreamCookiesFromRequest(req);
     const lmsHeaders = createAuthHeaders(authToken);
     const editorHeaders = createEditorHeaders(authToken, upstreamCookies);
-    const subjectGroup = getPrimarySubjectGroup(auth);
+    const worksheetSubjectGroup = "eng";
+    const subjectGroup = worksheetSubjectGroup;
 
     if (req.method === "GET") {
       const pageNum = Math.max(0, parseInt(String(req.query?.page || "0"), 10) || 0);
@@ -134,7 +135,7 @@ export default async function handler(req: any, res: any) {
       const integrateSearch = String(req.query?.integrateSearch || "").trim();
 
       const search = new URLSearchParams({
-        subjectGroup,
+        subjectGroup: worksheetSubjectGroup,
         page: String(pageNum),
         size: String(sizeNum),
       });
@@ -165,7 +166,7 @@ export default async function handler(req: any, res: any) {
       if (!questionsRes.ok) {
         questionsRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/questions", {
           method: "POST",
-          headers: editorHeaders,
+          headers: { ...editorHeaders, "Content-Type": "application/json" },
           body: JSON.stringify(questionItems),
         });
       }
@@ -211,7 +212,7 @@ export default async function handler(req: any, res: any) {
       if (!paperRes.ok) {
         paperRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper", {
           method: "POST",
-          headers: editorHeaders,
+          headers: { ...editorHeaders, "Content-Type": "application/json" },
           body: JSON.stringify(paperBody),
         });
       }
