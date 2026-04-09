@@ -858,12 +858,18 @@ export async function registerRoutes(
       if (cached) return res.json(cached);
 
       const editorHeaders: Record<string, string> = { "Accept": "application/json", "Cookie": req.session.flipCookies || "" };
-      const lmsHeaders: Record<string, string> = { "Accept": "application/json" };
-      if (req.session.authToken && req.session.authToken !== "authenticated") lmsHeaders["x-auth-token"] = req.session.authToken;
+      const lmsHeaders: Record<string, string> = { "Accept": "application/json", "Cookie": req.session.flipCookies || "" };
+      if (req.session.authToken && req.session.authToken !== "authenticated") {
+        lmsHeaders["x-auth-token"] = req.session.authToken;
+        editorHeaders["x-auth-token"] = req.session.authToken;
+      }
 
       let flipRes = await fetch("https://lms.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=eng", { headers: lmsHeaders });
       if (!flipRes.ok) {
         flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys/all?subjectGroup=eng", { headers: editorHeaders });
+      }
+      if (!flipRes.ok) {
+        flipRes = await fetch("https://dev.mstr.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=eng", { headers: lmsHeaders });
       }
       if (!flipRes.ok) {
         // On 429 or other rate limit, return cached stale data if available, else error
@@ -1561,13 +1567,28 @@ export async function registerRoutes(
             console.log(`[SUBJECTS] global fallback failed: ${await gr.text().catch(() => "")}`);
           }
         }
+
+        if (result.length === 0) {
+          const legacy = await fetch(`https://dev.mstr.flipedu.net/api/branch/question/subjects/all?subjectGroup=${sg}`, { headers: lmsHeaders });
+          console.log(`[SUBJECTS] Legacy branch ${legacy.status} (subjectGroup=${sg})`);
+          if (legacy.ok) {
+            const ld: any = await legacy.json();
+            result = Array.isArray(ld) ? ld : (ld?.content ?? ld?.data ?? ld?.subjects ?? ld?.list ?? []);
+          }
+        }
         return result;
       };
 
       const flattenSubjects = (nodes: any[], depth = 0): any[] => {
         const result: any[] = [];
         for (const n of (nodes || [])) {
-          result.push({ subjectNo: n.subjectNo, name: n.name, level: n.level ?? depth, ordering: n.ordering });
+          result.push({
+            ...n,
+            subjectNo: n.subjectNo ?? n.no ?? n.id ?? n.subjectId ?? n.classifyNo,
+            name: n.name ?? n.subjectName ?? n.title ?? String(n.subjectNo ?? n.no ?? n.id ?? n.subjectId ?? n.classifyNo ?? ""),
+            level: n.level ?? depth,
+            ordering: n.ordering ?? 0,
+          });
           if (n.children?.length) result.push(...flattenSubjects(n.children, depth + 1));
         }
         return result;
