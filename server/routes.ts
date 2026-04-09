@@ -1007,7 +1007,7 @@ export async function registerRoutes(
           .filter((n): n is number => typeof n === "number");
         if (questionNos.length > 0) {
           const localMappings = await db.select().from(questionSubjectMap).where(inArray(questionSubjectMap.questionNo, questionNos));
-          const localMap = new Map(localMappings.map(m => [m.questionNo, m.subjectId]));
+          const localMap = new Map<number, number>(localMappings.map((m: { questionNo: number; subjectId: number }) => [m.questionNo, m.subjectId]));
           if (localMap.size > 0) {
             data.questions = qs.map((q: any) => {
               const qNo = q.question?.questionNo ?? q.question?.id ?? q.questionNo ?? q.id;

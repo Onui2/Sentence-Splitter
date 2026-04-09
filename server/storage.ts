@@ -1,6 +1,6 @@
 import { materials, sentences, categories, type InsertMaterial, type InsertSentence, type Material, type Sentence, type MaterialWithSentences, type Category, type InsertCategory } from "@shared/schema";
 import { db } from "./db";
-import { eq, inArray, isNull, sql } from "drizzle-orm";
+import { asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 export interface IStorage {
   getCategories(): Promise<Category[]>;
@@ -54,15 +54,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMaterialWithSentences(id: number): Promise<MaterialWithSentences | undefined> {
-    const material = await db.query.materials.findFirst({
-      where: eq(materials.id, id),
-      with: {
-        sentences: {
-          orderBy: (sentences, { asc }) => [asc(sentences.orderIndex)]
-        }
-      }
-    });
-    return material;
+    const [material] = await db.select().from(materials).where(eq(materials.id, id));
+    if (!material) return undefined;
+
+    const materialSentences = await db
+      .select()
+      .from(sentences)
+      .where(eq(sentences.materialId, id))
+      .orderBy(asc(sentences.orderIndex));
+
+    return {
+      ...material,
+      sentences: materialSentences,
+    };
   }
 
   async createMaterial(insertMaterial: InsertMaterial): Promise<Material> {

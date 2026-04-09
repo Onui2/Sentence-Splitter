@@ -5,6 +5,7 @@ import { useRoute, Link } from "wouter";
 import { ArrowLeft, BookOpen, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Sentence } from "@shared/schema";
 
 export default function MaterialDetail() {
   const [match, params] = useRoute("/material/:id");
@@ -16,7 +17,7 @@ export default function MaterialDetail() {
 
   const sentences = material.sentences || [];
   const nextOrderIndex = sentences.length > 0 
-    ? Math.max(...sentences.map(s => s.orderIndex)) + 1 
+    ? Math.max(...sentences.map((s: Sentence) => s.orderIndex)) + 1 
     : 0;
 
   // Sort sentences by orderIndex

@@ -69,3 +69,5 @@ export const questionSubjectMap = pgTable("question_subject_map", {
   subjectId: integer("subject_id").notNull(),
   subjectName: text("subject_name"),
 });
+
+export * from "./models/chat";
