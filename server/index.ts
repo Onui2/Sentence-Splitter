@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import session from "express-session";
+import cookieSession from "cookie-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -14,20 +14,14 @@ declare module "http" {
   }
 }
 
-declare module "express-session" {
-  interface SessionData {
-    authToken?: string;
-    username?: string;
-    academyName?: string;
-    brandName?: string;
-    branchName?: string;
-    flipCookies?: string;
-    subjectGroupName?: string;
-    flipCredential?: string;
-    flipBrandNo?: number;
-    flipBranchNo?: number;
+declare module "express-serve-static-core" {
+  interface Request {
+    session: any;
   }
 }
+
+// cookie-session sets session on req.session 
+// Types are similar to express-session for our usage
 
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
@@ -35,16 +29,13 @@ if (!sessionSecret) {
 }
 
 app.use(
-  session({
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000,
-      sameSite: "lax",
-    },
+  cookieSession({
+    name: "session",
+    keys: [sessionSecret],
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax",
+    // No maxAge specified: behaves as a true "session cookie" deleted on browser close
   }),
 );
 

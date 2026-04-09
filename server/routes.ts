@@ -1991,13 +1991,10 @@ export async function registerRoutes(
   });
 
   app.post(api.auth.logout.path, async (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ message: "로그아웃 처리 중 오류가 발생했습니다." });
-      }
-      res.clearCookie("connect.sid");
-      res.json({ success: true });
-    });
+    req.session = null;
+    res.clearCookie("connect.sid");
+    res.clearCookie("session");
+    res.json({ success: true });
   });
 
   // POST /api/auth/update-token — manually set x-auth-token from browser
