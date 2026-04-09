@@ -973,16 +973,19 @@ export async function registerRoutes(
       const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
       const search = req.query.integrateSearch as string;
 
-      let url = `https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?subjectGroup=eng&page=${pageNum}&size=${sizeNum}`;
-      if (classifyNo && !isNaN(Number(classifyNo))) url += `&classifyNo=${classifyNo}`;
-      if (search?.trim()) url += `&integrateSearch=${encodeURIComponent(search.trim())}`;
+      let qs = `?subjectGroup=eng&page=${pageNum}&size=${sizeNum}`;
+      if (classifyNo && !isNaN(Number(classifyNo))) qs += `&classifyNo=${classifyNo}`;
+      if (search?.trim()) qs += `&integrateSearch=${encodeURIComponent(search.trim())}`;
 
-      const flipRes = await fetch(url, {
-        headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
-      });
-      if (!flipRes.ok) return res.status(flipRes.status).json({ message: "학습지를 불러올 수 없습니다." });
-      const data = await flipRes.json();
-      res.json(data);
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: `https://lms.flipedu.net/api/branch/question-papers${qs}`, headers: lms },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/question-papers${qs}`, headers: editor },
+        { url: `https://dev.mstr.flipedu.net/api/branch/question-papers${qs}`, headers: lms },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "학습지를 불러올 수 없습니다." });
+      res.json(result.data);
     } catch {
       res.status(500).json({ message: "학습지 조회 중 오류가 발생했습니다." });
     }
@@ -992,11 +995,14 @@ export async function registerRoutes(
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const paperNo = req.params.paperNo;
-      const flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
-        headers: { "Accept": "application/json", "Cookie": req.session.flipCookies || "" },
-      });
-      if (!flipRes.ok) return res.status(flipRes.status).json({ message: "학습지 상세를 불러올 수 없습니다." });
-      const data = await flipRes.json();
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: `https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, headers: lms },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, headers: editor },
+        { url: `https://dev.mstr.flipedu.net/api/branch/question-paper/${paperNo}`, headers: lms },
+      ]);
+      if (!result) return res.status(500).json({ message: "학습지 상세를 불러올 수 없습니다." });
+      const data = result.data;
 
       // Normalize classifyNo to top level so client can reliably access it
       if (!data.classifyNo) {
