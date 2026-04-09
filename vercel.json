@@ -1,6 +1,17 @@
 {
   "version": 2,
   "outputDirectory": "dist/public",
+  "functions": {
+    "api/question-papers/index.ts": {
+      "maxDuration": 60
+    },
+    "api/question-papers/[paperNo].ts": {
+      "maxDuration": 60
+    },
+    "api/auth/login.ts": {
+      "maxDuration": 20
+    }
+  },
   "rewrites": [
     { "source": "/api/auth/partners", "destination": "/api/auth/partners.ts" },
     { "source": "/api/auth/branches", "destination": "/api/auth/branches.ts" },
