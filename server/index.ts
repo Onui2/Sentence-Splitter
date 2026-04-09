@@ -90,7 +90,7 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
+export const initPromise = (async () => {
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -117,9 +117,6 @@ app.use((req, res, next) => {
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
     const port = parseInt(process.env.PORT || "5000", 10);
     httpServer.listen(
