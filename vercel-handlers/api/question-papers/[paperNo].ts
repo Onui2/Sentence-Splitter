@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { api } from "../../shared/routes";
+import { api } from "../../../shared/routes";
 import {
   createAuthHeaders,
   getAuthFromRequest,
@@ -65,38 +65,43 @@ export default async function handler(req: any, res: any) {
       return res.status(401).json({ message: "인증이 필요합니다." });
     }
 
+    const paperNo = String(req.query?.paperNo || "").trim();
+    if (!paperNo) {
+      return res.status(400).json({ message: "paperNo가 필요합니다." });
+    }
+
     const fetchFn = await getFetch();
     const headers = createAuthHeaders(authToken);
-    const subjectGroup = getPrimarySubjectGroup(auth);
 
     if (req.method === "GET") {
-      const pageNum = Math.max(0, parseInt(String(req.query?.page || "0"), 10) || 0);
-      const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query?.size || "20"), 10) || 20));
-      const classifyNo = String(req.query?.classifyNo || "").trim();
-      const integrateSearch = String(req.query?.integrateSearch || "").trim();
-
-      const search = new URLSearchParams({
-        subjectGroup,
-        page: String(pageNum),
-        size: String(sizeNum),
-      });
-      if (classifyNo) search.set("classifyNo", classifyNo);
-      if (integrateSearch) search.set("integrateSearch", integrateSearch);
-
-      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?${search.toString()}`, { headers });
+      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, { headers });
       if (!r.ok) {
-        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?${search.toString()}`, { headers });
+        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, { headers });
       }
       if (!r.ok) {
-        return res.status(r.status).json({ message: "학습지를 불러올 수 없습니다." });
+        return res.status(r.status).json({ message: "학습지 상세를 불러올 수 없습니다." });
       }
-
       const data = await r.json();
+      if (!data.classifyNo) {
+        data.classifyNo = data.classify?.classifyNo ?? data.category?.classifyNo ?? data.paperClassify?.classifyNo ?? null;
+      }
       return res.status(200).json(data);
     }
 
-    if (req.method === "POST") {
-      const input = api.questionPaperCreate.create.input.parse(parseRequestBody(req.body));
+    if (req.method === "PUT") {
+      const input = api.questionPapers.update.input.parse(parseRequestBody(req.body));
+
+      let subjectGroup = getPrimarySubjectGroup(auth);
+      try {
+        const existing = await fetchFn(`https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, { headers });
+        if (existing.ok) {
+          const data = await existing.json();
+          if (data?.subjectGroup) subjectGroup = String(data.subjectGroup);
+        }
+      } catch {
+        // keep fallback subject group
+      }
+
       const questionItems = input.questions.map((q) => buildQuestionItem(q, subjectGroup));
 
       let questionsRes = await fetchFn("https://lms.flipedu.net/api/branch/questions", {
@@ -143,27 +148,67 @@ export default async function handler(req: any, res: any) {
       };
       if (input.categoryId) paperBody.classifyNo = input.categoryId;
 
-      let paperRes = await fetchFn("https://lms.flipedu.net/api/branch/question-paper", {
-        method: "POST",
+      let paperRes = await fetchFn(`https://lms.flipedu.net/api/branch/question-paper/${paperNo}`, {
+        method: "PUT",
         headers,
         body: JSON.stringify(paperBody),
       });
       if (!paperRes.ok) {
-        paperRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper", {
+        paperRes = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/${paperNo}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify(paperBody),
+        });
+      }
+
+      if (paperRes.ok) {
+        const data = await paperRes.json();
+        return res.status(200).json(data);
+      }
+
+      let fallbackRes = await fetchFn("https://lms.flipedu.net/api/branch/question-paper", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(paperBody),
+      });
+      if (!fallbackRes.ok) {
+        fallbackRes = await fetchFn("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper", {
           method: "POST",
           headers,
           body: JSON.stringify(paperBody),
         });
       }
-      if (!paperRes.ok) {
-        const errText = await paperRes.text().catch(() => "");
-        return res.status(paperRes.status).json({
+      if (!fallbackRes.ok) {
+        const errText = await fallbackRes.text().catch(() => "");
+        return res.status(fallbackRes.status).json({
           message: errText || "학습지 저장에 실패했습니다.",
         });
       }
 
-      const data = await paperRes.json();
-      return res.status(201).json(data);
+      await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?paperNos=${paperNo}`, {
+        method: "DELETE",
+        headers,
+      }).catch(() => undefined);
+
+      const data = await fallbackRes.json();
+      return res.status(200).json(data);
+    }
+
+    if (req.method === "DELETE") {
+      let r = await fetchFn(`https://lms.flipedu.net/api/branch/question-papers?paperNos=${paperNo}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!r.ok && r.status !== 204) {
+        r = await fetchFn(`https://dev.lms.flipedu.net/api/flipedu/branch/question-papers?paperNos=${paperNo}`, {
+          method: "DELETE",
+          headers,
+        });
+      }
+      if (!r.ok && r.status !== 204) {
+        return res.status(r.status).json({ message: "학습지 삭제에 실패했습니다." });
+      }
+      return res.status(200).json({ success: true });
     }
 
     return res.status(405).json({ message: "Method Not Allowed" });

@@ -2,20 +2,8 @@
   "version": 2,
   "outputDirectory": "dist/public",
   "rewrites": [
-    { "source": "/api/auth/partners", "destination": "/api/auth/partners.ts" },
-    { "source": "/api/auth/branches", "destination": "/api/auth/branches.ts" },
-    { "source": "/api/auth/login", "destination": "/api/auth/login.ts" },
-    { "source": "/api/auth/me", "destination": "/api/auth/me.ts" },
-    { "source": "/api/auth/logout", "destination": "/api/auth/logout.ts" },
-    { "source": "/api/flip-categories", "destination": "/api/flip-categories/index.ts" },
-    { "source": "/api/flip-categories/(.*)", "destination": "/api/flip-categories/[classifyNo].ts" },
-    { "source": "/api/question-papers", "destination": "/api/question-papers/index.ts" },
-    { "source": "/api/question-papers/(.*)", "destination": "/api/question-papers/[paperNo].ts" },
-    { "source": "/api/question-paper-categories", "destination": "/api/question-paper-categories/index.ts" },
-    { "source": "/api/question-paper-categories/(.*)", "destination": "/api/question-paper-categories/[classifyNo].ts" },
-    { "source": "/api/question-subjects", "destination": "/api/question-subjects.ts" },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
