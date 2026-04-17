@@ -45,6 +45,15 @@ function clearSavedCredentials() {
   } catch {}
 }
 
+async function getErrorMessage(response: Response, fallback: string) {
+  try {
+    const data = await response.json();
+    return typeof data?.message === "string" ? data.message : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function getSavedInitial() {
   try {
     return loadSavedCredentials();
@@ -83,23 +92,25 @@ export default function Login() {
 
     // 학원명으로 brandNo를 조회한 뒤 지점 목록을 불러옵니다.
     const inputName = academyName.trim();
+    const isBrandNoInput = /^\d+$/.test(inputName);
     setIsSearching(true);
     try {
-      const partnerRes = await fetch(`/api/auth/partners?name=${encodeURIComponent(inputName)}`);
-      let inputBrandNo = "";
+      let inputBrandNo = isBrandNoInput ? inputName : "";
       let resolvedName = inputName;
 
-      if (partnerRes.ok) {
-        const partnerData: { brandNo?: string; name?: string } = await partnerRes.json();
-        inputBrandNo = String(partnerData?.brandNo ?? "");
-        resolvedName = partnerData?.name ?? inputName;
-      } else {
-        // 학원명 검색이 막히는 환경이 있어 fallback:
-        // 사용자가 숫자만 입력한 경우 brandNo로 간주하고 지점 조회로 진행
-        if (/^\d+$/.test(inputName)) {
-          inputBrandNo = inputName;
+      if (!isBrandNoInput) {
+        const partnerRes = await fetch(`/api/auth/partners?name=${encodeURIComponent(inputName)}`);
+
+        if (partnerRes.ok) {
+          const partnerData: { brandNo?: string; name?: string } = await partnerRes.json();
+          inputBrandNo = String(partnerData?.brandNo ?? "");
+          resolvedName = partnerData?.name ?? inputName;
         } else {
-          toast({ title: "검색 실패", description: "해당 학원을 찾을 수 없습니다. (학원명 또는 brandNo 숫자를 입력해주세요)", variant: "destructive" });
+          const message = await getErrorMessage(
+            partnerRes,
+            "해당 학원을 찾을 수 없습니다. 정확한 학원명 또는 brandNo 숫자를 입력해주세요.",
+          );
+          toast({ title: "검색 실패", description: message, variant: "destructive" });
           return;
         }
       }
@@ -112,7 +123,8 @@ export default function Login() {
       // 지점 목록 조회
       const branchRes = await fetch(`/api/auth/branches?brandNo=${encodeURIComponent(inputBrandNo)}`);
       if (!branchRes.ok) {
-        toast({ title: "오류", description: "지점 목록을 불러올 수 없습니다.", variant: "destructive" });
+        const message = await getErrorMessage(branchRes, "지점 목록을 불러올 수 없습니다.");
+        toast({ title: "오류", description: message, variant: "destructive" });
         return;
       }
       const branchData: Branch[] = await branchRes.json();
@@ -206,10 +218,10 @@ export default function Login() {
           {step === "search" ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[12px] text-gray-600 font-medium">학원명</label>
+                <label className="text-[12px] text-gray-600 font-medium">학원명 또는 브랜드번호</label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="학원명을 입력하세요 (예: 플립에듀)"
+                    placeholder="정확한 학원명 또는 brandNo 숫자"
                     className="border-gray-300 h-11 text-[13px] placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-blue-500 flex-1"
                     value={academyName}
                     onChange={(e) => setAcademyName(e.target.value)}

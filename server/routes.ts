@@ -1658,6 +1658,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "학원명을 입력해주세요." });
       }
 
+      if (/^\d+$/.test(trimmedName)) {
+        return res.json({ brandNo: trimmedName, logo: null, name: trimmedName });
+      }
+
       // 1) 가장 안정적인 경로: flipedu partners API에서 브랜드(brandNo) 검색
       // (한글 학원명 검색이 여기서 잘 되는 경우가 많아 우선 시도)
       const partnerEndpoints = [
