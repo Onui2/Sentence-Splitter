@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "NODE_ENV=development tsx --env-file=.env server/index.ts",
     "build": "tsx script/build.ts",
@@ -50,7 +53,7 @@
     "connect-pg-simple": "^10.0.0",
     "cookie-session": "^2.1.1",
     "date-fns": "^3.6.0",
-    "drizzle-orm": "^0.39.3",
+    "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.7.1",
     "embla-carousel-react": "^8.6.0",
     "express": "^5.0.1",
