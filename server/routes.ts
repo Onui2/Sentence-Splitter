@@ -223,36 +223,41 @@ export async function registerRoutes(
     }
   });
 
-  // Seed data only if DATABASE_URL is present
-  if (process.env.DATABASE_URL) {
-    const existingMaterials = await storage.getMaterials();
-    if (existingMaterials.length === 0) {
-      const sampleMaterial = await storage.createMaterial({
-        title: "Steve Jobs Stanford Commencement Speech",
-        description: "Practice one of the most famous graduation speeches."
-      });
-      
-      await storage.createSentence({
-        materialId: sampleMaterial.id,
-        originalText: "I am honored to be with you today at your commencement from one of the finest universities in the world.",
-        translation: "세계 최고의 대학 중 하나인 이곳에서 여러분의 졸업식에 함께하게 되어 영광입니다.",
-        orderIndex: 0
-      });
-      
-      await storage.createSentence({
-        materialId: sampleMaterial.id,
-        originalText: "I never graduated from college.",
-        translation: "저는 대학을 졸업하지 못했습니다.",
-        orderIndex: 1
-      });
-      
-      await storage.createSentence({
-        materialId: sampleMaterial.id,
-        originalText: "Truth be told, this is the closest I've ever gotten to a college graduation.",
-        translation: "사실대로 말하자면, 이것이 제가 대학 졸업식에 가장 가까이 와 본 것입니다.",
-        orderIndex: 2
-      });
-    }
+  if (process.env.SEED_SAMPLE_DATA === "true" && process.env.DATABASE_URL) {
+    void (async () => {
+      try {
+        const existingMaterials = await storage.getMaterials();
+        if (existingMaterials.length > 0) return;
+
+        const sampleMaterial = await storage.createMaterial({
+          title: "Steve Jobs Stanford Commencement Speech",
+          description: "Practice one of the most famous graduation speeches."
+        });
+
+        await storage.createSentence({
+          materialId: sampleMaterial.id,
+          originalText: "I am honored to be with you today at your commencement from one of the finest universities in the world.",
+          translation: "세계 최고의 대학 중 하나인 이곳에서 여러분의 졸업식에 함께하게 되어 영광입니다.",
+          orderIndex: 0
+        });
+
+        await storage.createSentence({
+          materialId: sampleMaterial.id,
+          originalText: "I never graduated from college.",
+          translation: "저는 대학을 졸업하지 못했습니다.",
+          orderIndex: 1
+        });
+
+        await storage.createSentence({
+          materialId: sampleMaterial.id,
+          originalText: "Truth be told, this is the closest I've ever gotten to a college graduation.",
+          translation: "사실대로 말하자면, 이것이 제가 대학 졸업식에 가장 가까이 와 본 것입니다.",
+          orderIndex: 2
+        });
+      } catch (err) {
+        console.warn("[DB] Sample data seed skipped:", err);
+      }
+    })();
   }
 
 
@@ -1662,17 +1667,10 @@ export async function registerRoutes(
         return res.json({ brandNo: trimmedName, logo: null, name: trimmedName });
       }
 
-      // 1) 가장 안정적인 경로: flipedu partners API에서 브랜드(brandNo) 검색
-      // (한글 학원명 검색이 여기서 잘 되는 경우가 많아 우선 시도)
+      // Login-before-auth discovery is served by FlipEdu's public v2 API.
+      // LMS/MSTR partner endpoints require an authenticated session and return 401 here.
       const partnerEndpoints = [
-        // Confirmed working (user-provided): https://www.flipedu.net/api/v2/partners?name=...
         `https://www.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
-        `https://dev.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
-        `https://www.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(trimmedName)}`,
-        `https://dev.flipedu.net/api/v2/auth/partners?name=${encodeURIComponent(trimmedName)}`,
-        `https://lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
-        `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
-        `https://dev.mstr.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
       ];
 
       const partnerHeaders = {
@@ -1720,39 +1718,6 @@ export async function registerRoutes(
         }
       }
 
-      // 2) fallback: mstr branches 검색으로 brandNo 추출
-      const mstrHeaders = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Origin": "https://mstr.flipedu.net",
-        "Referer": "https://mstr.flipedu.net/",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-      };
-
-      const searchUrl = `https://mstr.flipedu.net/api/branches?name=${encodeURIComponent(trimmedName)}&page=0&size=10`;
-      const response = await fetch(searchUrl, { headers: mstrHeaders, redirect: "follow" });
-      console.log(`[AUTH] Academy search mstr: ${response.status}`);
-
-      if (response.ok) {
-        const raw = await response.json();
-        const contents = raw.contents || raw.content || (Array.isArray(raw) ? raw : []);
-        const contentsArr = Array.isArray(contents) ? contents : [];
-        if (contentsArr.length === 0) {
-          attempts.push(`mstr: empty`);
-          return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
-        }
-        const first = contentsArr[0];
-        const brandNo = String(first.brandNo ?? first.brand_no ?? first.id ?? "");
-        if (!brandNo) {
-          attempts.push(`mstr: no-id`);
-          return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
-        }
-        return res.json({ brandNo, logo: first.logo ?? null, name: first.name ?? first.brandName ?? trimmedName });
-      }
-
-      console.log(`[AUTH] mstr search failed: ${response.status}`);
-      attempts.push(`mstr: ${response.status}`);
       return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
     } catch (err) {
       console.error("[AUTH] Academy search error:", err);
@@ -1776,13 +1741,10 @@ export async function registerRoutes(
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       };
 
-      // Confirmed working endpoint: GET /api/v2/branches?sys=0&brand={brandNo}
+      // Login-before-auth branch discovery uses the same public v2 API as partner lookup.
+      // LMS/MSTR branch endpoints require auth before they can be used.
       const endpoints = [
         `https://www.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
-        `https://dev.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
-        `https://www.flipedu.net/api/v2/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
-        `https://lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
-        `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
       ];
 
       let rawData: any = null;
