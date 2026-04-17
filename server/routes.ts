@@ -29,6 +29,19 @@ function clearCache(prefix: string) {
   for (const k of Array.from(apiCache.keys())) { if (k.startsWith(prefix)) apiCache.delete(k); }
 }
 
+const publicBrandAliases: Record<string, { brandNo: string; name: string; logo: null }> = {
+  "영플립": { brandNo: "3", name: "영플립", logo: null },
+  "수플립": { brandNo: "3", name: "수플립", logo: null },
+  "영수플립": { brandNo: "3", name: "영수플립", logo: null },
+  "영플립수플립": { brandNo: "3", name: "영플립/수플립", logo: null },
+  "플립에듀": { brandNo: "96", name: "플립에듀", logo: null },
+  "손스소프트": { brandNo: "1", name: "손스소프트", logo: null },
+};
+
+function normalizePublicBrandName(value: string) {
+  return value.replace(/[\s/∙·ㆍ-]+/g, "").toLowerCase();
+}
+
 // Build a FlipEdu question item:
 //   body[]  → QUERY + EXAMPLE only (no CHOICE — Elem enum doesn't accept it in POST)
 //   items[] → choices (separate field)
@@ -1665,6 +1678,11 @@ export async function registerRoutes(
 
       if (/^\d+$/.test(trimmedName)) {
         return res.json({ brandNo: trimmedName, logo: null, name: trimmedName });
+      }
+
+      const knownBrand = publicBrandAliases[normalizePublicBrandName(trimmedName)];
+      if (knownBrand) {
+        return res.json(knownBrand);
       }
 
       // Login-before-auth discovery is served by FlipEdu's public v2 API.
