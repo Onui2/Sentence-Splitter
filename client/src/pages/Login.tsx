@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, LogIn, Search, ArrowLeft, Eye, EyeOff } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
 
 type Branch = { value: string; label1: string; label2?: string };
+type AcademyBrand = { brandNo: string; name: string; logo?: string | null; source?: string };
+type PartnerSearchResponse = AcademyBrand & { brands?: AcademyBrand[] };
 
 const SAVED_CREDENTIALS_KEY = "flipedu_saved_credentials";
 
@@ -62,6 +63,34 @@ function getSavedInitial() {
   }
 }
 
+function formatBranchLabel(branch: Branch) {
+  return branch.label2 ? `${branch.label1} ${branch.label2}` : branch.label1;
+}
+
+function formatBrandLabel(brand: AcademyBrand) {
+  return `${brand.name}${brand.brandNo ? ` (#${brand.brandNo})` : ""}`;
+}
+
+function normalizeBrandCandidates(data: PartnerSearchResponse, fallbackName: string): AcademyBrand[] {
+  const rawBrands = Array.isArray(data.brands) && data.brands.length > 0
+    ? data.brands
+    : [{ brandNo: data.brandNo, name: data.name || fallbackName, logo: data.logo, source: data.source }];
+
+  const seen = new Set<string>();
+  return rawBrands
+    .map((brand) => ({
+      brandNo: String(brand.brandNo || "").trim(),
+      name: String(brand.name || fallbackName).trim(),
+      logo: brand.logo ?? null,
+      source: brand.source,
+    }))
+    .filter((brand) => {
+      if (!brand.brandNo || seen.has(brand.brandNo)) return false;
+      seen.add(brand.brandNo);
+      return true;
+    });
+}
+
 export default function Login() {
   const { login } = useAuth();
   const { toast } = useToast();
@@ -70,9 +99,11 @@ export default function Login() {
   const [saved] = useState(() => getSavedInitial());
   const [rememberMe, setRememberMe] = useState(!!saved);
 
-  const [step, setStep] = useState<"search" | "login">(saved ? "login" : "search");
+  const [step, setStep] = useState<"search" | "brand" | "login">(saved ? "login" : "search");
   const [academyName, setAcademyName] = useState(saved?.academyName || "");
   const [brandNo, setBrandNo] = useState(saved?.brandNo || "");
+  const [brandCandidates, setBrandCandidates] = useState<AcademyBrand[]>([]);
+  const [selectedBrandNo, setSelectedBrandNo] = useState(saved?.brandNo || "");
   const [branches, setBranches] = useState<Branch[]>(saved?.branches || []);
   const [selectedBranch, setSelectedBranch] = useState(saved?.branchNo || "");
   const [username, setUsername] = useState(saved?.username || "");
@@ -84,47 +115,21 @@ export default function Login() {
   const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSearch = async () => {
-    if (!academyName.trim()) {
-      toast({ title: "알림", description: "학원명을 입력해주세요.", variant: "destructive" });
+  const loadBranchesForBrand = async (brand: AcademyBrand, fallbackName = academyName.trim()) => {
+    if (!brand.brandNo) {
+      toast({ title: "검색 실패", description: "브랜드 정보를 확인할 수 없습니다.", variant: "destructive" });
       return;
     }
 
-    // 학원명으로 brandNo를 조회한 뒤 지점 목록을 불러옵니다.
-    const inputName = academyName.trim();
-    const isBrandNoInput = /^\d+$/.test(inputName);
     setIsSearching(true);
     try {
-      let inputBrandNo = isBrandNoInput ? inputName : "";
-      let resolvedName = inputName;
-
-      if (!isBrandNoInput) {
-        const partnerRes = await fetch(`/api/auth/partners?name=${encodeURIComponent(inputName)}`);
-
-        if (partnerRes.ok) {
-          const partnerData: { brandNo?: string; name?: string } = await partnerRes.json();
-          inputBrandNo = String(partnerData?.brandNo ?? "");
-          resolvedName = partnerData?.name ?? inputName;
-        } else {
-          const message = await getErrorMessage(
-            partnerRes,
-            "해당 학원을 찾을 수 없습니다. 정확한 학원명 또는 brandNo 숫자를 입력해주세요.",
-          );
-          toast({ title: "검색 실패", description: message, variant: "destructive" });
-          return;
-        }
-      }
-
-      if (!inputBrandNo) {
-        toast({ title: "검색 실패", description: "해당 학원을 찾을 수 없습니다. (brandNo 확인 필요)", variant: "destructive" });
-        return;
-      }
-
-      // 지점 목록 조회
-      const branchRes = await fetch(`/api/auth/branches?brandNo=${encodeURIComponent(inputBrandNo)}`);
+      const branchRes = await fetch(`/api/auth/branches?brandNo=${encodeURIComponent(brand.brandNo)}`);
       if (!branchRes.ok) {
-        const message = await getErrorMessage(branchRes, "지점 목록을 불러올 수 없습니다.");
-        toast({ title: "오류", description: message, variant: "destructive" });
+        toast({
+          title: "오류",
+          description: await getErrorMessage(branchRes, "지점 목록을 불러올 수 없습니다."),
+          variant: "destructive",
+        });
         return;
       }
       const branchData: Branch[] = await branchRes.json();
@@ -132,13 +137,67 @@ export default function Login() {
         toast({ title: "검색 실패", description: "해당 학원의 지점을 찾을 수 없습니다.", variant: "destructive" });
         return;
       }
-      setAcademyName(resolvedName);
-      setBrandNo(inputBrandNo);
+      setAcademyName(brand.name || fallbackName);
+      setBrandNo(brand.brandNo);
+      setSelectedBrandNo(brand.brandNo);
       setBranches(branchData);
       setSelectedBranch(branchData[0].value);
       setStep("login");
     } catch {
       toast({ title: "오류", description: "지점 조회 중 오류가 발생했습니다.", variant: "destructive" });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearch = async () => {
+    const inputName = academyName.trim();
+    if (!inputName) {
+      toast({ title: "알림", description: "학원명 또는 브랜드 번호를 입력해주세요.", variant: "destructive" });
+      return;
+    }
+
+    setBrandNo("");
+    setSelectedBrandNo("");
+    setBrandCandidates([]);
+    setBranches([]);
+    setSelectedBranch("");
+    setIsSearching(true);
+
+    try {
+      if (/^\d+$/.test(inputName)) {
+        await loadBranchesForBrand({ brandNo: inputName, name: inputName, logo: null, source: "manual" }, inputName);
+        return;
+      }
+
+      const partnerRes = await fetch(`/api/auth/partners?name=${encodeURIComponent(inputName)}`);
+      if (!partnerRes.ok) {
+        toast({
+          title: "검색 실패",
+          description: await getErrorMessage(partnerRes, "해당 학원을 찾을 수 없습니다. 학원명 또는 브랜드 번호를 입력해주세요."),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const partnerData: PartnerSearchResponse = await partnerRes.json();
+      const candidates = normalizeBrandCandidates(partnerData, inputName);
+      if (candidates.length === 0) {
+        toast({ title: "검색 실패", description: "검색 결과에서 브랜드 번호를 찾을 수 없습니다.", variant: "destructive" });
+        return;
+      }
+
+      setBrandCandidates(candidates);
+      setSelectedBrandNo(candidates[0].brandNo);
+
+      if (candidates.length === 1) {
+        await loadBranchesForBrand(candidates[0], inputName);
+        return;
+      }
+
+      setStep("brand");
+    } catch {
+      toast({ title: "오류", description: "학원 검색 중 오류가 발생했습니다.", variant: "destructive" });
     } finally {
       setIsSearching(false);
     }
@@ -158,7 +217,7 @@ export default function Login() {
     try {
       const credential = btoa(encodeURIComponent(password.trim()));
       const selectedBranchObj = branches.find(b => b.value === selectedBranch);
-      const branchLabel = selectedBranchObj ? (selectedBranchObj.label2 ? `${selectedBranchObj.label1} ${selectedBranchObj.label2}` : selectedBranchObj.label1) : "";
+      const branchLabel = selectedBranchObj ? formatBranchLabel(selectedBranchObj) : "";
       await login({
         brandNo,
         branchNo: selectedBranch,
@@ -198,6 +257,8 @@ export default function Login() {
   const goBack = () => {
     setStep("search");
     setBrandNo("");
+    setSelectedBrandNo("");
+    setBrandCandidates([]);
     setBranches([]);
     setSelectedBranch("");
     setUsername("");
@@ -244,6 +305,52 @@ export default function Login() {
                 </div>
               </div>
             </div>
+          ) : step === "brand" ? (
+            <div className="space-y-4">
+              <button
+                onClick={goBack}
+                className="flex items-center gap-2 text-gray-500 hover:text-gray-900 text-[13px] transition-colors"
+                data-testid="button-back-to-search"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>다시 검색</span>
+              </button>
+
+              <div className="space-y-2">
+                <label className="text-[12px] text-gray-600 font-medium">브랜드 선택</label>
+                <Select value={selectedBrandNo} onValueChange={setSelectedBrandNo}>
+                  <SelectTrigger
+                    className="border-gray-300 h-11 text-[13px] focus:ring-1 focus:ring-blue-500"
+                    data-testid="select-brand"
+                  >
+                    <SelectValue placeholder="브랜드를 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {brandCandidates.map((brand) => (
+                      <SelectItem key={brand.brandNo} value={brand.brandNo} className="text-[13px]">
+                        {formatBrandLabel(brand)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[12px] text-gray-500">
+                  검색어와 일치하는 브랜드가 여러 개 있습니다. 로그인할 브랜드를 선택해주세요.
+                </p>
+              </div>
+
+              <Button
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 text-[13px] font-medium"
+                onClick={() => {
+                  const brand = brandCandidates.find((candidate) => candidate.brandNo === selectedBrandNo);
+                  if (brand) loadBranchesForBrand(brand);
+                }}
+                disabled={isSearching || !selectedBrandNo}
+                data-testid="button-load-branches"
+              >
+                {isSearching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
+                지점 불러오기
+              </Button>
+            </div>
           ) : (
             <div className="space-y-4">
               <button
@@ -267,8 +374,7 @@ export default function Login() {
                   <SelectContent>
                     {branches.map((b) => (
                       <SelectItem key={b.value} value={b.value} className="text-[13px]">
-                        {b.label1}
-                        {b.label2 ? ` ${b.label2}` : ""}
+                        {formatBranchLabel(b)}
                       </SelectItem>
                     ))}
                   </SelectContent>

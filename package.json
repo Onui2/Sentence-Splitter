@@ -11,6 +11,9 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
+    "harness": "python script/check_har.py",
+    "harness:all": "python script/check_har.py --all --only-api --limit 0",
+    "harness:json": "python script/check_har.py --json",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

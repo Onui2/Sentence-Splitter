@@ -1667,6 +1667,74 @@ export async function registerRoutes(
     }
   });
 
+  type AuthBrand = { brandNo: string; name: string; logo: string | null; source?: string };
+
+  function firstString(...values: unknown[]): string {
+    for (const value of values) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return "";
+  }
+
+  function extractList(raw: any): any[] {
+    const roots = [raw?.data, raw].filter(Boolean);
+    for (const root of roots) {
+      if (Array.isArray(root)) return root;
+      for (const key of ["contents", "content", "elements", "items", "results", "list", "rows"]) {
+        if (Array.isArray(root?.[key])) return root[key];
+      }
+    }
+    return raw ? [raw] : [];
+  }
+
+  function normalizeBrand(raw: any, fallbackName: string, source: string, allowGenericId: boolean): AuthBrand | null {
+    const brandNo = firstString(
+      raw?.brandNo,
+      raw?.brand_no,
+      raw?.brand,
+      raw?.brandId,
+      raw?.brand_id,
+      raw?.brandSeq,
+      raw?.brand_seq,
+      raw?.partnerNo,
+      raw?.partner_no,
+      allowGenericId ? raw?.id : undefined,
+      allowGenericId ? raw?.no : undefined,
+    );
+    if (!brandNo) return null;
+
+    const name = firstString(
+      raw?.name,
+      raw?.brandName,
+      raw?.brand_name,
+      raw?.partnerName,
+      raw?.partner_name,
+      raw?.academyName,
+      raw?.academy_name,
+      raw?.companyName,
+      raw?.company_name,
+      fallbackName,
+    );
+
+    const logo = firstString(raw?.logo, raw?.logoUrl, raw?.logo_url, raw?.imageUrl, raw?.image_url) || null;
+    return { brandNo, name: name || brandNo, logo, source };
+  }
+
+  function uniqueBrands(brands: AuthBrand[]): AuthBrand[] {
+    const seen = new Set<string>();
+    return brands.filter((brand) => {
+      if (seen.has(brand.brandNo)) return false;
+      seen.add(brand.brandNo);
+      return true;
+    });
+  }
+
+  function sendBrandSearchResult(res: any, brands: AuthBrand[]) {
+    const first = brands[0];
+    return res.json({ ...first, brands });
+  }
+
   app.get(api.auth.searchAcademy.path, async (req, res) => {
     try {
       const rawName = req.query.name as string | string[] | undefined;
@@ -1677,12 +1745,12 @@ export async function registerRoutes(
       }
 
       if (/^\d+$/.test(trimmedName)) {
-        return res.json({ brandNo: trimmedName, logo: null, name: trimmedName });
+        return sendBrandSearchResult(res, [{ brandNo: trimmedName, name: trimmedName, logo: null, source: "manual" }]);
       }
 
       const knownBrand = publicBrandAliases[normalizePublicBrandName(trimmedName)];
       if (knownBrand) {
-        return res.json(knownBrand);
+        return sendBrandSearchResult(res, [{ ...knownBrand, source: "alias" }]);
       }
 
       // Login-before-auth discovery is served by FlipEdu's public v2 API.
@@ -1712,24 +1780,15 @@ export async function registerRoutes(
           const raw = await r.json().catch(() => null);
           if (!raw) continue;
 
-          // Normalize: accept {brandNo, logo, name} or {data:{...}} etc.
-          // The /api/v2/partners response may be an array or a paged object.
-          const candidateRoot = raw?.data ?? raw;
-          const candidateArray =
-            Array.isArray(candidateRoot) ? candidateRoot :
-            Array.isArray(candidateRoot?.contents) ? candidateRoot.contents :
-            Array.isArray(candidateRoot?.content) ? candidateRoot.content :
-            null;
-
-          const candidate = (candidateArray ? candidateArray[0] : candidateRoot) ?? null;
-          if (!candidate) continue;
-
-          const brandNo = String(candidate?.brandNo ?? candidate?.brand_no ?? candidate?.brand ?? candidate?.id ?? "");
-          if (!brandNo) continue;
-
-          const logo = (candidate?.logo ?? null) as string | null;
-          const displayName = String(candidate?.name ?? candidate?.brandName ?? candidate?.brand_name ?? trimmedName);
-          return res.json({ brandNo, logo, name: displayName });
+          const brands = uniqueBrands(
+            extractList(raw)
+              .map((item) => normalizeBrand(item, trimmedName, new URL(endpoint).hostname, true))
+              .filter((item): item is AuthBrand => Boolean(item)),
+          );
+          if (brands.length > 0) {
+            console.log(`[AUTH] Academy search candidates: ${brands.map((brand) => `${brand.name}#${brand.brandNo}`).join(", ")}`);
+            return sendBrandSearchResult(res, brands);
+          }
         } catch (e) {
           attempts.push(`err: ${endpoint.substring(8, 20)}`);
           console.log(`[AUTH] Academy search partners ${endpoint} error:`, e);
@@ -1788,23 +1847,19 @@ export async function registerRoutes(
         return res.status(500).json({ message: "지점 목록을 불러올 수 없습니다." });
       }
 
-      // Normalize response: /api/v2/branches returns array of branch objects
-      // Map to { value, label1, label2 } format expected by client
-      let branches: Array<{ value: string; label1: string; label2?: string }> = [];
-      if (Array.isArray(rawData)) {
-        branches = rawData.map((b: any) => ({
-          value: String(b.branchNo ?? b.id ?? b.no ?? b.value ?? ""),
-          label1: b.branchName ?? b.name ?? b.label1 ?? "",
-          label2: b.label2,
-        }));
-      } else if (Array.isArray(rawData.content)) {
-        branches = rawData.content.map((b: any) => ({
-          value: String(b.branchNo ?? b.id ?? b.no ?? b.value ?? ""),
-          label1: b.branchName ?? b.name ?? b.label1 ?? "",
-          label2: b.label2,
-        }));
-      } else {
-        // Unexpected response shape — fail fast so client won't crash on .map
+      const seenBranchNos = new Set<string>();
+      const branches = extractList(rawData)
+        .map((b: any) => {
+          const value = firstString(b?.branchNo, b?.branch_no, b?.branch, b?.id, b?.no, b?.value);
+          if (!value || seenBranchNos.has(value)) return null;
+          seenBranchNos.add(value);
+          const label1 = firstString(b?.branchName, b?.branch_name, b?.name, b?.label1, b?.title, `지점 ${value}`);
+          const label2 = firstString(b?.label2, b?.branchType, b?.branch_type, b?.address, b?.addr);
+          return { value, label1, ...(label2 ? { label2 } : {}) };
+        })
+        .filter((branch): branch is { value: string; label1: string; label2?: string } => Boolean(branch));
+
+      if (branches.length === 0) {
         return res.status(500).json({ message: "지점 응답 형식이 올바르지 않습니다." });
       }
 

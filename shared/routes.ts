@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { insertMaterialSchema, insertSentenceSchema, materials, sentences, type MaterialWithSentences } from "./schema";
 
+const authBrandSchema = z.object({
+  brandNo: z.string(),
+  name: z.string(),
+  logo: z.string().nullable(),
+  source: z.string().optional(),
+});
+
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
   notFound: z.object({ message: z.string() }),
@@ -495,7 +502,7 @@ export const api = {
       method: "GET" as const,
       path: "/api/auth/partners" as const,
       responses: {
-        200: z.object({ brandNo: z.string(), logo: z.string().nullable() }),
+        200: authBrandSchema.extend({ brands: z.array(authBrandSchema).optional() }),
         404: z.object({ message: z.string() }),
       },
     },
