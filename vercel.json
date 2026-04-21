@@ -3,6 +3,7 @@
   "outputDirectory": "dist/public",
   "functions": {
     "api/index.ts": {
+      "includeFiles": "dist/index.cjs",
       "maxDuration": 60
     }
   },
