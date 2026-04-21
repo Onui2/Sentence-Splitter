@@ -1757,6 +1757,10 @@ export async function registerRoutes(
       // LMS/MSTR partner endpoints require an authenticated session and return 401 here.
       const partnerEndpoints = [
         `https://www.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://dev.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
+        // Also try LMS auth variants if available
+        `https://lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
+        `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
       ];
 
       const partnerHeaders = {
@@ -1822,6 +1826,10 @@ export async function registerRoutes(
       // LMS/MSTR branch endpoints require auth before they can be used.
       const endpoints = [
         `https://www.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
+        `https://dev.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
+        // Also try LMS auth variants if available
+        `https://lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
+        `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
       ];
 
       let rawData: any = null;
