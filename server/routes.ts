@@ -1739,7 +1739,7 @@ export async function registerRoutes(
 
   app.post(api.questionSubjects.create.path, async (req, res) => {
     try {
-      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
 
       const input = api.questionSubjects.create.input.parse(req.body);
       const subjectGroup =
@@ -1762,7 +1762,7 @@ export async function registerRoutes(
         { url: "https://dev.mstr.flipedu.net/api/branch/question/subjects", method: "POST", body: formList, headers: lms },
       ]);
 
-      if (!result) return res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?앹꽦???ㅽ뙣?덉뒿?덈떎." });
+      if (!result) return res.status(500).json({ message: "문제 카테고리 생성에 실패했습니다." });
       clearCache(`qsubject:${req.session.username}`);
       res.status(201).json(result.data);
     } catch (err) {
@@ -1770,13 +1770,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join('.') });
       }
       console.log("[SUBJECTS] create error:", err);
-      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?앹꽦 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+      res.status(500).json({ message: "문제 카테고리 생성 중 오류가 발생했습니다." });
     }
   });
 
   app.put(api.questionSubjects.update.path, async (req, res) => {
     try {
-      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
 
       const subjectNo = Number(req.params.subjectNo);
       if (!Number.isFinite(subjectNo)) {
@@ -1798,7 +1798,7 @@ export async function registerRoutes(
         { url: "https://dev.mstr.flipedu.net/api/branch/question/subjects", method: "PUT", body: formList, headers: lms },
       ]);
 
-      if (!result) return res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?섏젙???ㅽ뙣?덉뒿?덈떎." });
+      if (!result) return res.status(500).json({ message: "문제 카테고리 수정에 실패했습니다." });
       clearCache(`qsubject:${req.session.username}`);
       res.json(result.data);
     } catch (err) {
@@ -1806,13 +1806,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join('.') });
       }
       console.log("[SUBJECTS] update error:", err);
-      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?섏젙 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+      res.status(500).json({ message: "문제 카테고리 수정 중 오류가 발생했습니다." });
     }
   });
 
   app.delete(api.questionSubjects.delete.path, async (req, res) => {
     try {
-      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
 
       const subjectNo = Number(req.params.subjectNo);
       if (!Number.isFinite(subjectNo)) {
@@ -1831,16 +1831,16 @@ export async function registerRoutes(
         { url: `https://dev.mstr.flipedu.net/api/branch/question/subjects?${query}`, method: "DELETE", headers: lms },
       ]);
 
-      if (!result) return res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ??젣???ㅽ뙣?덉뒿?덈떎." });
+      if (!result) return res.status(500).json({ message: "문제 카테고리 삭제에 실패했습니다." });
       clearCache(`qsubject:${req.session.username}`);
       res.json({ success: true });
     } catch (err) {
       console.log("[SUBJECTS] delete error:", err);
-      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ??젣 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+      res.status(500).json({ message: "문제 카테고리 삭제 중 오류가 발생했습니다." });
     }
   });
-
-  app.get("/api/question-subjects-legacy", async (req, res) => {
+  // GET /api/question-subjects — fetch subject category list from www.flipedu.net
+  app.get(api.questionSubjects.list.path, async (req, res) => {
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const authToken = req.session.authToken;
@@ -2512,7 +2512,7 @@ ${questionLines}
 {"depth3":"선택한소분류","results":[{"id":"문제ID","idx":카테고리번호},...]}`;
 
     // Try multiple models in order — stop at first success
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
 
     const generateWithFallback = async (): Promise<string> => {
       let lastErr: any;
@@ -2658,7 +2658,7 @@ ${count}개의 유사 문제를 다음 JSON 형식으로만 반환하세요. 설
   }
 ]`;
 
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
     let lastErr: any;
     for (const modelName of models) {
       try {
@@ -2715,7 +2715,7 @@ ${count}개의 유사 문제를 다음 JSON 형식으로만 반환하세요. 설
 - 이미지에 문제가 없으면 빈 배열 []을 반환하세요
 - JSON만 반환하고 다른 설명은 하지 마세요`;
 
-    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
 
     let lastErr: any;
     for (const modelName of models) {
