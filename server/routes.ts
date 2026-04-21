@@ -1751,30 +1751,6 @@ export async function registerRoutes(
       res.status(500).json({ message: "문제 목록 조회 실패" });
     }
   });
-
-  return "";
-  }
-
-  }
-    
-    // If no list found, maybe it's a single object that looks like a brand/branch
-    if (raw && (raw.brandNo || raw.brand || raw.partnerNo || raw.id || raw.branchNo)) {
-      return [raw];
-    }
-    
-    return [];
-  }
-
-  ;
-  }
-
-  );
-  }
-
-  );
-  }
-
-  
   app.get(api.auth.searchAcademy.path, async (req, res) => {
     try {
       const rawName = req.query.name as string | string[] | undefined;
