@@ -1811,7 +1811,7 @@ export async function registerRoutes(
       }
 
       return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
-    } catch (err) {
+    } catch (err: any) {
       console.error("[AUTH] Academy search error:", err);
       res.status(500).json({ message: "학원 검색 중 오류가 발생했습니다. " + err.message });
     }
@@ -1870,7 +1870,7 @@ export async function registerRoutes(
         });
 
       res.json(branches);
-    } catch (err) {
+    } catch (err: any) {
       console.error("[AUTH] Branches error:", err);
       res.status(500).json({ message: "지점 조회 중 오류가 발생했습니다. " + err.message });
     }
