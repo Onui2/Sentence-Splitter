@@ -123,7 +123,7 @@ export default function Login() {
 
     setIsSearching(true);
     try {
-      const branchRes = await fetch(`/api/auth/branches?brandNo=${encodeURIComponent(brand.brandNo)}`);
+      const branchRes = await fetch(`/api/v2/branches?brandNo=${encodeURIComponent(brand.brandNo)}`);
       if (!branchRes.ok) {
         toast({
           title: "오류",
@@ -170,7 +170,7 @@ export default function Login() {
         return;
       }
 
-      const partnerRes = await fetch(`/api/auth/partners?name=${encodeURIComponent(inputName)}`);
+      const partnerRes = await fetch(`/api/v2/partners?name=${encodeURIComponent(inputName)}`);
       if (!partnerRes.ok) {
         toast({
           title: "검색 실패",

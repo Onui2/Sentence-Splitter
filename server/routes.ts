@@ -41,6 +41,91 @@ const publicBrandAliases: Record<string, { brandNo: string; name: string; logo: 
 function normalizePublicBrandName(value: string) {
   return value.replace(/[\s/∙·ㆍ-]+/g, "").toLowerCase();
 }
+type AuthBrand = { brandNo: string; name: string; logo: string | null; source?: string };
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function extractList(raw: any): any[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  
+  // Check common wrappers
+  const roots = [raw.data, raw.contents, raw.content, raw].filter(Boolean);
+  for (const root of roots) {
+    if (typeof root !== "object") continue;
+    if (Array.isArray(root)) return root;
+    for (const key of ["elements", "items", "results", "list", "rows", "partners", "branches", "content"]) {
+      if (Array.isArray(root[key])) return root[key];
+    }
+  }
+  
+  // If no list found, maybe it's a single object that looks like a brand/branch
+  if (raw && (raw.brandNo || raw.brand || raw.partnerNo || raw.id || raw.branchNo)) {
+    return [raw];
+  }
+  
+  return [];
+}
+
+function normalizeBrand(raw: any, fallbackName: string, source: string, allowGenericId: boolean): AuthBrand | null {
+  const brandNo = firstString(
+    raw?.brandNo,
+    raw?.brand_no,
+    raw?.brand,
+    raw?.brandId,
+    raw?.brand_id,
+    raw?.brandSeq,
+    raw?.brand_seq,
+    raw?.partnerNo,
+    raw?.partner_no,
+    raw?.partnerId,
+    raw?.partner_id,
+    allowGenericId ? raw?.id : undefined,
+    allowGenericId ? raw?.no : undefined,
+    allowGenericId ? raw?.partner_no : undefined,
+  );
+  if (!brandNo) return null;
+
+  const name = firstString(
+    raw?.name,
+    raw?.brandName,
+    raw?.brand_name,
+    raw?.partnerName,
+    raw?.partner_name,
+    raw?.academyName,
+    raw?.academy_name,
+    raw?.companyName,
+    raw?.company_name,
+    fallbackName,
+  );
+
+  const logo = firstString(raw?.logo, raw?.logoUrl, raw?.logo_url, raw?.imageUrl, raw?.image_url) || null;
+  return { brandNo, name: name || brandNo, logo, source };
+}
+
+function uniqueBrands(brands: AuthBrand[]): AuthBrand[] {
+  const seen = new Set<string>();
+  return brands.filter((brand) => {
+    if (!brand.brandNo || seen.has(brand.brandNo)) return false;
+    seen.add(brand.brandNo);
+    return true;
+  });
+}
+
+function sendBrandSearchResult(res: any, brands: AuthBrand[]) {
+  if (!brands || brands.length === 0) {
+    return res.status(404).json({ message: "학원을 찾을 수 없습니다." });
+  }
+  const first = brands[0];
+  return res.json({ ...first, brands });
+}
+
 
 // Build a FlipEdu question item:
 //   body[]  → QUERY + EXAMPLE only (no CHOICE — Elem enum doesn't accept it in POST)
@@ -1667,29 +1752,10 @@ export async function registerRoutes(
     }
   });
 
-  type AuthBrand = { brandNo: string; name: string; logo: string | null; source?: string };
-
-  function firstString(...values: unknown[]): string {
-    for (const value of values) {
-      if (typeof value === "string" && value.trim()) return value.trim();
-      if (typeof value === "number" && Number.isFinite(value)) return String(value);
-    }
-    return "";
+  return "";
   }
 
-  function extractList(raw: any): any[] {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    
-    // Check common wrappers
-    const roots = [raw.data, raw.contents, raw.content, raw].filter(Boolean);
-    for (const root of roots) {
-      if (typeof root !== "object") continue;
-      if (Array.isArray(root)) return root;
-      for (const key of ["elements", "items", "results", "list", "rows", "partners", "branches", "content"]) {
-        if (Array.isArray(root[key])) return root[key];
-      }
-    }
+  }
     
     // If no list found, maybe it's a single object that looks like a brand/branch
     if (raw && (raw.brandNo || raw.brand || raw.partnerNo || raw.id || raw.branchNo)) {
@@ -1699,56 +1765,16 @@ export async function registerRoutes(
     return [];
   }
 
-  function normalizeBrand(raw: any, fallbackName: string, source: string, allowGenericId: boolean): AuthBrand | null {
-    const brandNo = firstString(
-      raw?.brandNo,
-      raw?.brand_no,
-      raw?.brand,
-      raw?.brandId,
-      raw?.brand_id,
-      raw?.brandSeq,
-      raw?.brand_seq,
-      raw?.partnerNo,
-      raw?.partner_no,
-      raw?.partnerId,
-      raw?.partner_id,
-      allowGenericId ? raw?.id : undefined,
-      allowGenericId ? raw?.no : undefined,
-      allowGenericId ? raw?.partner_no : undefined,
-    );
-    if (!brandNo) return null;
-
-    const name = firstString(
-      raw?.name,
-      raw?.brandName,
-      raw?.brand_name,
-      raw?.partnerName,
-      raw?.partner_name,
-      raw?.academyName,
-      raw?.academy_name,
-      raw?.companyName,
-      raw?.company_name,
-      fallbackName,
-    );
-
-    const logo = firstString(raw?.logo, raw?.logoUrl, raw?.logo_url, raw?.imageUrl, raw?.image_url) || null;
-    return { brandNo, name: name || brandNo, logo, source };
+  ;
   }
 
-  function uniqueBrands(brands: AuthBrand[]): AuthBrand[] {
-    const seen = new Set<string>();
-    return brands.filter((brand) => {
-      if (seen.has(brand.brandNo)) return false;
-      seen.add(brand.brandNo);
-      return true;
-    });
+  );
   }
 
-  function sendBrandSearchResult(res: any, brands: AuthBrand[]) {
-    const first = brands[0];
-    return res.json({ ...first, brands });
+  );
   }
 
+  
   app.get(api.auth.searchAcademy.path, async (req, res) => {
     try {
       const rawName = req.query.name as string | string[] | undefined;
@@ -1767,12 +1793,9 @@ export async function registerRoutes(
         return sendBrandSearchResult(res, [{ ...knownBrand, source: "alias" }]);
       }
 
-      // Login-before-auth discovery is served by FlipEdu's public v2 API.
-      // LMS/MSTR partner endpoints require an authenticated session and return 401 here.
       const partnerEndpoints = [
         `https://www.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
         `https://dev.flipedu.net/api/v2/partners?name=${encodeURIComponent(trimmedName)}`,
-        // Also try LMS auth variants if available
         `https://lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
         `https://dev.lms.flipedu.net/api/auth/partners?name=${encodeURIComponent(trimmedName)}`,
       ];
@@ -1780,56 +1803,44 @@ export async function registerRoutes(
       const partnerHeaders = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        // Match the environment where CORS allows this request (teacher portal)
         "Origin": "https://teacher.flipedu.net",
         "Referer": "https://teacher.flipedu.net/",
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       };
 
-      const attempts: string[] = [];
+      const attempts = [];
       for (const endpoint of partnerEndpoints) {
         try {
           const r = await fetch(endpoint, { headers: partnerHeaders, redirect: "follow" });
           const domain = new URL(endpoint).hostname.replace('www.', '').split('.')[0];
           attempts.push(`${domain}: ${r.status}`);
-          console.log(`[AUTH] Academy search partners ${endpoint}: ${r.status}`);
           if (!r.ok) continue;
 
           const raw = await r.json().catch(() => null);
-          if (!raw) {
-            console.log(`[AUTH] Academy search ${endpoint} returned empty or invalid JSON`);
-            continue;
-          }
+          if (!raw) continue;
 
-          // In-depth debugging for response structure
           const list = extractList(raw);
-          console.log(`[AUTH] Academy search ${endpoint} - extracted ${list.length} items. Raw sample:`, JSON.stringify(raw).substring(0, 300));
-
           const brands = uniqueBrands(
             list
-              .map((item) => normalizeBrand(item, trimmedName || "", new URL(endpoint).hostname, true))
-              .filter((item): item is AuthBrand => Boolean(item)),
+              .map((item) => normalizeBrand(item, trimmedName, new URL(endpoint).hostname, true))
+              .filter((item) => !!item)
           );
 
           if (brands.length > 0) {
-            console.log(`[AUTH] Academy search SUCCESS (${domain}): ${brands.map((brand) => `${brand.name}#${brand.brandNo}`).join(", ")}`);
             return sendBrandSearchResult(res, brands);
-          } else if (list.length > 0) {
-            console.log(`[AUTH] Academy search candidates failed normalization for ${list.length} items from ${domain}`);
           }
         } catch (e) {
           attempts.push(`err: ${endpoint.substring(8, 20)}`);
-          console.log(`[AUTH] Academy search partners ${endpoint} error:`, e);
         }
       }
 
       return res.status(404).json({ message: `학원을 찾을 수 없습니다. (${attempts.join(", ")})` });
     } catch (err) {
       console.error("[AUTH] Academy search error:", err);
-      res.status(500).json({ message: "학원 검색 중 오류가 발생했습니다." });
+      res.status(500).json({ message: "학원 검색 중 오류가 발생했습니다. " + err.message });
     }
   });
+
 
   app.get(api.auth.branches.path, async (req, res) => {
     try {
@@ -1847,59 +1858,45 @@ export async function registerRoutes(
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       };
 
-      // Login-before-auth branch discovery uses the same public v2 API as partner lookup.
-      // LMS/MSTR branch endpoints require auth before they can be used.
       const endpoints = [
         `https://www.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
         `https://dev.flipedu.net/api/v2/branches?sys=0&brand=${encodeURIComponent(trimmedBrandNo)}`,
-        // Also try LMS auth variants if available
         `https://lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
         `https://dev.lms.flipedu.net/api/auth/branches?brandNo=${encodeURIComponent(trimmedBrandNo)}`,
       ];
 
-      let rawData: any = null;
-
+      let rawData = null;
       for (const endpoint of endpoints) {
         try {
           const response = await fetch(endpoint, { headers: flipHeaders, redirect: "follow" });
-          console.log(`[AUTH] Branches ${endpoint}: ${response.status}`);
           if (response.ok) {
             rawData = await response.json();
-            console.log(`[AUTH] Branches success (${endpoint}): extracted ${extractList(rawData).length} items. Body sample:`, JSON.stringify(rawData).substring(0, 300));
             break;
-          } else {
-            const errText = await response.text().catch(() => "");
-            console.log(`[AUTH] Branches ${endpoint} failed: ${errText.substring(0, 200)}`);
           }
-        } catch (err) {
-          console.log(`[AUTH] Branches ${endpoint} error:`, err);
-        }
+        } catch (err) {}
       }
 
       if (!rawData) {
         return res.status(500).json({ message: "지점 목록을 불러올 수 없습니다." });
       }
 
-      const seenBranchNos = new Set<string>();
+      const seenBranchNos = new Set();
       const branches = extractList(rawData)
-        .map((b: any) => {
-          const value = firstString(b?.branchNo, b?.branch_no, b?.branch, b?.id, b?.no, b?.value);
-          if (!value || seenBranchNos.has(value)) return null;
-          seenBranchNos.add(value);
-          const label1 = firstString(b?.branchName, b?.branch_name, b?.name, b?.label1, b?.title, `지점 ${value}`);
-          const label2 = firstString(b?.label2, b?.branchType, b?.branch_type, b?.address, b?.addr);
-          return { value, label1, ...(label2 ? { label2 } : {}) };
-        })
-        .filter((branch): branch is { value: string; label1: string; label2?: string } => Boolean(branch));
-
-      if (branches.length === 0) {
-        return res.status(500).json({ message: "지점 응답 형식이 올바르지 않습니다." });
-      }
+        .map((b) => ({
+          value: firstString(b.branchNo, b.branch_no, b.no, b.id),
+          label1: firstString(b.branchName, b.branch_name, b.name),
+          label2: firstString(b.academyName, b.academy_name),
+        }))
+        .filter((b) => {
+          if (!b.value || seenBranchNos.has(b.value)) return false;
+          seenBranchNos.add(b.value);
+          return true;
+        });
 
       res.json(branches);
     } catch (err) {
       console.error("[AUTH] Branches error:", err);
-      res.status(500).json({ message: "지점 조회 중 오류가 발생했습니다." });
+      res.status(500).json({ message: "지점 조회 중 오류가 발생했습니다. " + err.message });
     }
   });
 

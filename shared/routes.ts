@@ -500,7 +500,7 @@ export const api = {
   auth: {
     searchAcademy: {
       method: "GET" as const,
-      path: "/api/auth/partners" as const,
+      path: "/api/v2/partners" as const,
       responses: {
         200: authBrandSchema.extend({ brands: z.array(authBrandSchema).optional() }),
         404: z.object({ message: z.string() }),
@@ -508,7 +508,7 @@ export const api = {
     },
     branches: {
       method: "GET" as const,
-      path: "/api/auth/branches" as const,
+      path: "/api/v2/branches" as const,
       responses: {
         200: z.array(z.object({ value: z.string(), label1: z.string(), label2: z.string().optional() })),
       },
