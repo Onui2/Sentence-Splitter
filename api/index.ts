@@ -1,6 +1,7 @@
+import serverModule from "../dist/index.cjs";
+
 export default async function handler(req: any, res: any) {
   try {
-    const serverModule = await import("../dist/index.cjs");
     const app = serverModule.default || serverModule.app || serverModule;
     if (serverModule.initPromise) {
       await serverModule.initPromise;
