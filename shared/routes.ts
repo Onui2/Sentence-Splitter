@@ -392,6 +392,40 @@ export const api = {
         401: z.object({ message: z.string() }),
       },
     },
+    create: {
+      method: "POST" as const,
+      path: "/api/question-subjects" as const,
+      input: z.object({
+        name: z.string().min(1),
+        parentNo: z.number().optional(),
+        ordering: z.number().optional(),
+        subjectGroup: z.string().min(1).optional(),
+      }),
+      responses: {
+        201: z.array(z.any()),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    update: {
+      method: "PUT" as const,
+      path: "/api/question-subjects/:subjectNo" as const,
+      input: z.object({
+        name: z.string().min(1),
+        ordering: z.number().optional(),
+      }),
+      responses: {
+        200: z.array(z.any()),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    delete: {
+      method: "DELETE" as const,
+      path: "/api/question-subjects/:subjectNo" as const,
+      responses: {
+        200: z.object({ success: z.boolean() }),
+        401: z.object({ message: z.string() }),
+      },
+    },
   },
   questions: {
     bulkClassify: {

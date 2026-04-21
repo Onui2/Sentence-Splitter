@@ -1626,7 +1626,221 @@ export async function registerRoutes(
   });
 
   // GET /api/question-subjects — fetch subject category list from www.flipedu.net
-  app.get("/api/question-subjects", async (req, res) => {
+  const normalizeQuestionSubjectTree = (nodes: any[], depth = 0): any[] =>
+    (nodes || []).map((node: any) => {
+      const subjectNo = Number(node.subjectNo ?? node.no ?? node.id ?? node.subjectId ?? node.classifyNo);
+      const level = typeof node.level === "number" ? node.level : depth;
+      return {
+        ...node,
+        subjectNo,
+        name: node.name ?? node.subjectName ?? node.title ?? String(subjectNo || ""),
+        level,
+        ordering: typeof node.ordering === "number" ? node.ordering : 0,
+        children: Array.isArray(node.children) ? normalizeQuestionSubjectTree(node.children, level + 1) : [],
+      };
+    });
+
+  const flattenQuestionSubjectTree = (nodes: any[]): any[] => {
+    const result: any[] = [];
+    for (const node of nodes || []) {
+      result.push({
+        ...node,
+        children: undefined,
+      });
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        result.push(...flattenQuestionSubjectTree(node.children));
+      }
+    }
+    return result;
+  };
+
+  const extractQuestionSubjectList = (raw: any): any[] => {
+    if (Array.isArray(raw)) return raw;
+    return raw?.content ?? raw?.data ?? raw?.subjects ?? raw?.list ?? [];
+  };
+
+  const buildQuestionSubjectQuery = (subjectGroup: string, parentNo?: number, isInContents?: boolean) => {
+    const params = new URLSearchParams();
+    params.set("subjectGroup", subjectGroup);
+    if (typeof parentNo === "number" && Number.isFinite(parentNo)) params.set("parentNo", String(parentNo));
+    if (isInContents) params.set("isInContents", "true");
+    return params.toString();
+  };
+
+  const fetchQuestionSubjectsForGroup = async (
+    session: any,
+    subjectGroup: string,
+    options?: { allDepth?: boolean; parentNo?: number; isInContents?: boolean },
+  ): Promise<any[]> => {
+    const { lms, editor } = getAuthHeaders(session);
+    const query = buildQuestionSubjectQuery(subjectGroup, options?.parentNo, options?.isInContents);
+    const suffix = options?.allDepth === false ? "" : "/all";
+    const result = await tryFlipEndpoints([
+      { url: `https://lms.flipedu.net/api/branch/question/subjects${suffix}?${query}`, headers: lms },
+      { url: `https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects${suffix}?${query}`, headers: editor },
+      { url: `https://dev.lms.flipedu.net/api/flipedu/question/subjects${suffix}?${query}`, headers: editor },
+      { url: `https://dev.flipedu.net/api/v2/question/subjects${suffix}?${query}`, headers: editor },
+      { url: `https://dev.mstr.flipedu.net/api/branch/question/subjects${suffix}?${query}`, headers: lms },
+    ]);
+
+    if (!result) return [];
+    return extractQuestionSubjectList(result.data);
+  };
+
+  app.get(api.questionSubjects.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+
+      const qsg = req.query.subjectGroup;
+      const rawGroup =
+        (Array.isArray(qsg) ? qsg.join(",") : typeof qsg === "string" ? qsg : null) ||
+        req.session.subjectGroupName ||
+        "eng";
+      const subjectGroups = String(rawGroup)
+        .split(",")
+        .map((group: string) => group.trim())
+        .filter(Boolean);
+      const parentNo = req.query.parentNo != null ? Number(req.query.parentNo) : undefined;
+      const allDepth = req.query.all === "false" ? false : true;
+      const flat = req.query.flat === "false" ? false : true;
+      const isInContents = req.query.isInContents === "true";
+
+      const cacheKey = [
+        "qsubject",
+        req.session.username,
+        req.session.flipBranchNo || "",
+        subjectGroups.join(","),
+        allDepth ? "all" : "depth1",
+        flat ? "flat" : "tree",
+        typeof parentNo === "number" && Number.isFinite(parentNo) ? String(parentNo) : "root",
+        isInContents ? "contents" : "allitems",
+      ].join(":");
+      const cached = getCached(cacheKey);
+      if (cached) return res.json(cached);
+
+      const allNodes: any[] = [];
+      for (const subjectGroup of subjectGroups) {
+        const nodes = await fetchQuestionSubjectsForGroup(req.session, subjectGroup, {
+          allDepth,
+          parentNo: typeof parentNo === "number" && Number.isFinite(parentNo) ? parentNo : undefined,
+          isInContents,
+        });
+        const normalizedTree = normalizeQuestionSubjectTree(nodes);
+        allNodes.push(...(flat ? flattenQuestionSubjectTree(normalizedTree) : normalizedTree));
+      }
+
+      setCache(cacheKey, allNodes);
+      res.json(allNodes);
+    } catch (e) {
+      console.log("[SUBJECTS] error:", e);
+      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ 議고쉶 ?ㅽ뙣" });
+    }
+  });
+
+  app.post(api.questionSubjects.create.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+
+      const input = api.questionSubjects.create.input.parse(req.body);
+      const subjectGroup =
+        input.subjectGroup ||
+        (Array.isArray(req.session.subjectGroupName)
+          ? req.session.subjectGroupName[0]
+          : String(req.session.subjectGroupName || "eng").split(",")[0].trim());
+      const formList = [{
+        subjectGroup,
+        name: input.name,
+        parentNo: input.parentNo,
+        ordering: input.ordering ?? 0,
+      }];
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: "https://lms.flipedu.net/api/branch/question/subjects", method: "POST", body: formList, headers: lms },
+        { url: "https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects", method: "POST", body: formList, headers: editor },
+        { url: "https://dev.lms.flipedu.net/api/flipedu/question/subjects", method: "POST", body: formList, headers: editor },
+        { url: "https://dev.flipedu.net/api/v2/question/subjects", method: "POST", body: formList, headers: editor },
+        { url: "https://dev.mstr.flipedu.net/api/branch/question/subjects", method: "POST", body: formList, headers: lms },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?앹꽦???ㅽ뙣?덉뒿?덈떎." });
+      clearCache(`qsubject:${req.session.username}`);
+      res.status(201).json(result.data);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join('.') });
+      }
+      console.log("[SUBJECTS] create error:", err);
+      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?앹꽦 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+    }
+  });
+
+  app.put(api.questionSubjects.update.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+
+      const subjectNo = Number(req.params.subjectNo);
+      if (!Number.isFinite(subjectNo)) {
+        return res.status(400).json({ message: "Invalid subjectNo" });
+      }
+
+      const input = api.questionSubjects.update.input.parse(req.body);
+      const formList = [{
+        subjectNo,
+        name: input.name,
+        ...(typeof input.ordering === "number" ? { ordering: input.ordering } : {}),
+      }];
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: "https://lms.flipedu.net/api/branch/question/subjects", method: "PUT", body: formList, headers: lms },
+        { url: "https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects", method: "PUT", body: formList, headers: editor },
+        { url: "https://dev.lms.flipedu.net/api/flipedu/question/subjects", method: "PUT", body: formList, headers: editor },
+        { url: "https://dev.flipedu.net/api/v2/question/subjects", method: "PUT", body: formList, headers: editor },
+        { url: "https://dev.mstr.flipedu.net/api/branch/question/subjects", method: "PUT", body: formList, headers: lms },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?섏젙???ㅽ뙣?덉뒿?덈떎." });
+      clearCache(`qsubject:${req.session.username}`);
+      res.json(result.data);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join('.') });
+      }
+      console.log("[SUBJECTS] update error:", err);
+      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ?섏젙 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+    }
+  });
+
+  app.delete(api.questionSubjects.delete.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+
+      const subjectNo = Number(req.params.subjectNo);
+      if (!Number.isFinite(subjectNo)) {
+        return res.status(400).json({ message: "Invalid subjectNo" });
+      }
+
+      const params = new URLSearchParams();
+      params.append("subjectNos", String(subjectNo));
+      const query = params.toString();
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: `https://lms.flipedu.net/api/branch/question/subjects?${query}`, method: "DELETE", headers: lms },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects?${query}`, method: "DELETE", headers: editor },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/question/subjects?${query}`, method: "DELETE", headers: editor },
+        { url: `https://dev.flipedu.net/api/v2/question/subjects?${query}`, method: "DELETE", headers: editor },
+        { url: `https://dev.mstr.flipedu.net/api/branch/question/subjects?${query}`, method: "DELETE", headers: lms },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ??젣???ㅽ뙣?덉뒿?덈떎." });
+      clearCache(`qsubject:${req.session.username}`);
+      res.json({ success: true });
+    } catch (err) {
+      console.log("[SUBJECTS] delete error:", err);
+      res.status(500).json({ message: "臾몄젣 移댄뀒怨좊━ ??젣 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." });
+    }
+  });
+
+  app.get("/api/question-subjects-legacy", async (req, res) => {
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const authToken = req.session.authToken;
