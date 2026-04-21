@@ -1678,14 +1678,25 @@ export async function registerRoutes(
   }
 
   function extractList(raw: any): any[] {
-    const roots = [raw?.data, raw].filter(Boolean);
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    
+    // Check common wrappers
+    const roots = [raw.data, raw.contents, raw.content, raw].filter(Boolean);
     for (const root of roots) {
+      if (typeof root !== "object") continue;
       if (Array.isArray(root)) return root;
-      for (const key of ["contents", "content", "elements", "items", "results", "list", "rows"]) {
-        if (Array.isArray(root?.[key])) return root[key];
+      for (const key of ["elements", "items", "results", "list", "rows", "partners", "branches", "content"]) {
+        if (Array.isArray(root[key])) return root[key];
       }
     }
-    return raw ? [raw] : [];
+    
+    // If no list found, maybe it's a single object that looks like a brand/branch
+    if (raw && (raw.brandNo || raw.brand || raw.partnerNo || raw.id || raw.branchNo)) {
+      return [raw];
+    }
+    
+    return [];
   }
 
   function normalizeBrand(raw: any, fallbackName: string, source: string, allowGenericId: boolean): AuthBrand | null {
@@ -1699,8 +1710,11 @@ export async function registerRoutes(
       raw?.brand_seq,
       raw?.partnerNo,
       raw?.partner_no,
+      raw?.partnerId,
+      raw?.partner_id,
       allowGenericId ? raw?.id : undefined,
       allowGenericId ? raw?.no : undefined,
+      allowGenericId ? raw?.partner_no : undefined,
     );
     if (!brandNo) return null;
 
@@ -1781,17 +1795,28 @@ export async function registerRoutes(
           attempts.push(`${domain}: ${r.status}`);
           console.log(`[AUTH] Academy search partners ${endpoint}: ${r.status}`);
           if (!r.ok) continue;
+
           const raw = await r.json().catch(() => null);
-          if (!raw) continue;
+          if (!raw) {
+            console.log(`[AUTH] Academy search ${endpoint} returned empty or invalid JSON`);
+            continue;
+          }
+
+          // In-depth debugging for response structure
+          const list = extractList(raw);
+          console.log(`[AUTH] Academy search ${endpoint} - extracted ${list.length} items. Raw sample:`, JSON.stringify(raw).substring(0, 300));
 
           const brands = uniqueBrands(
-            extractList(raw)
-              .map((item) => normalizeBrand(item, trimmedName, new URL(endpoint).hostname, true))
+            list
+              .map((item) => normalizeBrand(item, trimmedName || "", new URL(endpoint).hostname, true))
               .filter((item): item is AuthBrand => Boolean(item)),
           );
+
           if (brands.length > 0) {
-            console.log(`[AUTH] Academy search candidates: ${brands.map((brand) => `${brand.name}#${brand.brandNo}`).join(", ")}`);
+            console.log(`[AUTH] Academy search SUCCESS (${domain}): ${brands.map((brand) => `${brand.name}#${brand.brandNo}`).join(", ")}`);
             return sendBrandSearchResult(res, brands);
+          } else if (list.length > 0) {
+            console.log(`[AUTH] Academy search candidates failed normalization for ${list.length} items from ${domain}`);
           }
         } catch (e) {
           attempts.push(`err: ${endpoint.substring(8, 20)}`);
@@ -1840,7 +1865,7 @@ export async function registerRoutes(
           console.log(`[AUTH] Branches ${endpoint}: ${response.status}`);
           if (response.ok) {
             rawData = await response.json();
-            console.log(`[AUTH] Branches success:`, JSON.stringify(rawData).substring(0, 300));
+            console.log(`[AUTH] Branches success (${endpoint}): extracted ${extractList(rawData).length} items. Body sample:`, JSON.stringify(rawData).substring(0, 300));
             break;
           } else {
             const errText = await response.text().catch(() => "");
