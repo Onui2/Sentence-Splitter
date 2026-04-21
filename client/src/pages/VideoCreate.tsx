@@ -47,8 +47,9 @@ export default function VideoCreateModal({ open, onClose, defaultCategoryId }: V
     queryFn: async () => {
       const res = await fetch(api.videoCategories.list.path);
       if (!res.ok) return [];
-      return res.json();
-    }
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data?.content ?? data?.contents ?? data?.data ?? []);
+    },
   });
 
   const [files, setFiles] = useState<VideoFile[]>([]);

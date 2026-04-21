@@ -181,6 +181,11 @@ function buildQuestionItem(q: any, subjectGroup: string) {
   return item;
 }
 
+function getEffectiveSubjectGroup(req: any): string {
+  const qsg = req.query.subjectGroup;
+  return (Array.isArray(qsg) ? qsg.join(",") : typeof qsg === "string" ? qsg : null) || req.session.subjectGroupName || "eng";
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -516,8 +521,8 @@ export async function registerRoutes(
         return res.status(500).json({ message: "카테고리를 불러올 수 없습니다." });
       }
 
-      setCache(cacheKey, result.data);
-      res.json(result.data);
+      setCache(cacheKey, extractList(result.data));
+      res.json(extractList(result.data));
     } catch {
       res.status(500).json({ message: "카테고리 조회 중 오류가 발생했습니다." });
     }
@@ -969,12 +974,13 @@ export async function registerRoutes(
         editorHeaders["x-auth-token"] = req.session.authToken;
       }
 
-      let flipRes = await fetch("https://lms.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=eng", { headers: lmsHeaders });
+      const subjectGroup = getEffectiveSubjectGroup(req).split(",")[0].trim() || "eng";
+      let flipRes = await fetch(`https://lms.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=${subjectGroup}`, { headers: lmsHeaders });
       if (!flipRes.ok) {
-        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys/all?subjectGroup=eng", { headers: editorHeaders });
+        flipRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/question-paper/classifys/all?subjectGroup=${subjectGroup}`, { headers: editorHeaders });
       }
       if (!flipRes.ok) {
-        flipRes = await fetch("https://dev.mstr.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=eng", { headers: lmsHeaders });
+        flipRes = await fetch(`https://dev.mstr.flipedu.net/api/branch/question-paper/classifys/all?subjectGroup=${subjectGroup}`, { headers: lmsHeaders });
       }
       if (!flipRes.ok) {
         // On 429 or other rate limit, return cached stale data if available, else error
@@ -982,7 +988,8 @@ export async function registerRoutes(
         if (stale) { console.log(`[qpcat] Rate limited, returning stale cache`); return res.json(stale.data); }
         return res.status(flipRes.status).json({ message: "카테고리를 불러올 수 없습니다." });
       }
-      const data = await flipRes.json();
+      const raw = await flipRes.json();
+      const data = extractList(raw);
       setCache(cacheKey, data);
       res.json(data);
     } catch {
@@ -1434,7 +1441,8 @@ export async function registerRoutes(
         if (stale) return res.json(stale.data);
         return res.status(flipRes.status).json({ message: "영상 카테고리를 불러올 수 없습니다." });
       }
-      const data = await flipRes.json();
+      const raw = await flipRes.json();
+      const data = extractList(raw);
       setCache(cacheKey, data);
       res.json(data);
     } catch {

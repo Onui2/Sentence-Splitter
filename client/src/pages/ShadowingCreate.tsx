@@ -64,8 +64,9 @@ export default function ShadowingCreate() {
     queryFn: async () => {
       const res = await fetch(api.flipCategories.list.path);
       if (!res.ok) return [];
-      return res.json();
-    }
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data?.content ?? data?.contents ?? data?.data ?? []);
+    },
   });
 
   const [title, setTitle] = useState("");
