@@ -1,10 +1,7 @@
+import app, { initPromise } from "../server/index";
+
 export default async function handler(req: any, res: any) {
   try {
-    // Dynamically import to catch any top-level module initialization errors that break Vercel
-    const serverModule = await import("../server/index");
-    const app = serverModule.default;
-    const initPromise = serverModule.initPromise;
-
     await initPromise;
     return app(req, res);
   } catch (err: any) {
