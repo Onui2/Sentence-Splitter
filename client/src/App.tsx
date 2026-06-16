@@ -10,6 +10,7 @@ import MaterialDetail from "@/pages/MaterialDetail";
 import ShadowingCreate from "@/pages/ShadowingCreate";
 import VideoHome from "@/pages/VideoHome";
 import WorksheetHome from "@/pages/WorksheetHome";
+import WordHome from "@/pages/WordHome";
 import PRDDocument from "@/pages/PRDDocument";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -71,6 +72,7 @@ function ProtectedRouter() {
               <Route path="/create" component={ShadowingCreate} />
               <Route path="/video" component={VideoHome} />
               <Route path="/worksheet" component={WorksheetHome} />
+              <Route path="/words" component={WordHome} />
               <Route path="/material/:id" component={MaterialDetail} />
               <Route component={NotFound} />
             </Switch>

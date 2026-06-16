@@ -492,6 +492,55 @@ export const api = {
       },
     },
   },
+  wordCategories: {
+    list: {
+      method: "GET" as const,
+      path: "/api/word-categories" as const,
+      responses: {
+        200: z.array(z.any()),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
+  wordPapers: {
+    list: {
+      method: "GET" as const,
+      path: "/api/word-papers" as const,
+      responses: {
+        200: z.any(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/word-papers" as const,
+      input: z.object({
+        title: z.string().min(1),
+        categoryId: z.number().optional(),
+        words: z.array(z.object({
+          eng: z.string().min(1),
+          kor: z.string().min(1),
+          part: z.string().optional(),
+          phonetic: z.string().optional(),
+          exampleInEng: z.string().optional(),
+          exampleInKor: z.string().optional(),
+        })),
+      }),
+      responses: {
+        201: z.any(),
+        400: z.object({ message: z.string() }),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    delete: {
+      method: "DELETE" as const,
+      path: "/api/word-papers/:vocabularyNo" as const,
+      responses: {
+        200: z.any(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
   videoCategories: {
     list: {
       method: "GET" as const,

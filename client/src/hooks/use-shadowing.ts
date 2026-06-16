@@ -1,21 +1,18 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { type InsertMaterial, type InsertSentence, type MaterialWithSentences } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-// ============================================
-// FLIP PAPERS HOOKS
-// ============================================
-
-export function useFlipPapers(classifyNo?: string, page = 0, size = 20) {
+export function useFlipPapers(classifyNo?: string, page = 0, size = 20, search = "") {
   return useQuery({
-    queryKey: [api.flipPapers.list.path, classifyNo || "all", page, size],
+    queryKey: [api.flipPapers.list.path, classifyNo || "all", page, size, search.trim()],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (classifyNo) params.set("classifyNo", classifyNo);
       params.set("page", String(page));
       params.set("size", String(size));
+      if (search.trim()) params.set("integrateSearch", search.trim());
       const res = await fetch(`${api.flipPapers.list.path}?${params}`);
       if (!res.ok) throw new Error("Failed to fetch papers");
       return await res.json();
@@ -39,8 +36,16 @@ export function useFlipPaperDetail(paperNo?: number) {
 export function useUpdateFlipPaper() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
   return useMutation({
-    mutationFn: async ({ paperNo, name, classifyNo, edits, deleteShadowingNos, addSentences }: {
+    mutationFn: async ({
+      paperNo,
+      name,
+      classifyNo,
+      edits,
+      deleteShadowingNos,
+      addSentences,
+    }: {
       paperNo: number;
       name?: string;
       classifyNo?: number;
@@ -61,10 +66,10 @@ export function useUpdateFlipPaper() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.flipPapers.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.flipPapers.detail.path, variables.paperNo] });
-      toast({ title: "학습지가 수정되었습니다." });
+      toast({ title: "쉐도잉 자료가 수정되었습니다." });
     },
     onError: () => {
-      toast({ title: "수정 실패", description: "학습지 수정에 실패했습니다.", variant: "destructive" });
+      toast({ title: "수정 실패", description: "쉐도잉 자료 수정에 실패했습니다.", variant: "destructive" });
     },
   });
 }
@@ -72,25 +77,21 @@ export function useUpdateFlipPaper() {
 export function useDeleteFlipPaper() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
   return useMutation({
     mutationFn: async (paperNo: number) => {
       const url = buildUrl(api.flipPapers.delete.path, { paperNo });
-      const res = await apiRequest("DELETE", url);
-      return res;
+      return await apiRequest("DELETE", url);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.flipPapers.list.path] });
-      toast({ title: "학습지가 삭제되었습니다." });
+      toast({ title: "쉐도잉 자료가 삭제되었습니다." });
     },
     onError: () => {
-      toast({ title: "삭제 실패", description: "학습지 삭제에 실패했습니다.", variant: "destructive" });
+      toast({ title: "삭제 실패", description: "쉐도잉 자료 삭제에 실패했습니다.", variant: "destructive" });
     },
   });
 }
-
-// ============================================
-// MATERIALS HOOKS
-// ============================================
 
 export function useMaterials(categoryId?: number) {
   return useQuery({
@@ -112,14 +113,15 @@ export function useMaterial(id: number) {
       const res = await fetch(url);
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Failed to fetch material");
-      return await res.json();
+      return await res.json() as MaterialWithSentences;
     },
-    enabled: !isNaN(id),
+    enabled: !Number.isNaN(id),
   });
 }
 
 export function useCreateMaterial() {
   const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async (data: InsertMaterial) => {
       const res = await apiRequest("POST", api.materials.create.path, data);
@@ -135,12 +137,9 @@ export function useCreateMaterial() {
   });
 }
 
-// ============================================
-// SENTENCES HOOKS
-// ============================================
-
 export function useCreateSentence() {
   const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ materialId, ...data }: InsertSentence & { materialId: number }) => {
       const url = buildUrl(api.sentences.create.path, { materialId });
@@ -148,7 +147,7 @@ export function useCreateSentence() {
       if (!res.ok) throw new Error("Failed to create sentence");
       return await res.json();
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.materials.get.path, variables.materialId] });
     },
   });
@@ -157,6 +156,7 @@ export function useCreateSentence() {
 export function useBulkCreateSentences() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
   return useMutation({
     mutationFn: async (data: { materialId: number; sentences: { originalText: string; translation: string }[] }) => {
       const url = buildUrl(api.sentences.bulkCreate.path, { materialId: data.materialId });
@@ -164,7 +164,7 @@ export function useBulkCreateSentences() {
       if (!res.ok) throw new Error("Failed to bulk create sentences");
       return await res.json();
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.materials.get.path, variables.materialId] });
       toast({
         title: "Success",

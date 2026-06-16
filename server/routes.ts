@@ -709,12 +709,14 @@ export async function registerRoutes(
         return res.status(401).json({ message: "인증이 필요합니다." });
       }
       const classifyNo = req.query.classifyNo as string;
+      const search = req.query.integrateSearch as string;
       const pageNum = Math.max(0, parseInt(String(req.query.page || "0"), 10) || 0);
       const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
       
       const { lms, editor } = getAuthHeaders(req.session);
       let url = `?page=${pageNum}&size=${sizeNum}`;
       if (classifyNo && !isNaN(Number(classifyNo))) url += `&classifyNo=${classifyNo}`;
+      if (search?.trim()) url += `&integrateSearch=${encodeURIComponent(search.trim())}`;
 
       const result = await tryFlipEndpoints([
         { url: `https://lms.flipedu.net/api/branch/shadowing-papers${url}`, headers: lms },
@@ -1634,6 +1636,125 @@ export async function registerRoutes(
   });
 
   // GET /api/question-subjects — fetch subject category list from www.flipedu.net
+  app.get(api.wordCategories.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const { lms, editor } = getAuthHeaders(req.session);
+      const query = "?subjectGroupName=eng&type=WORD_PAPER";
+      const result = await tryFlipEndpoints([
+        { url: `https://dev.flipedu.net/api/v2/classifys/all${query}`, headers: editor },
+        { url: `https://www.flipedu.net/api/v2/classifys/all${query}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/branch/WORD_PAPER/classifys/all${query}`, headers: lms },
+      ]);
+      if (!result) return res.status(500).json({ message: "단어 카테고리를 불러올 수 없습니다." });
+      res.json(extractList(result.data));
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "단어 카테고리 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.get(api.wordPapers.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const page = Math.max(0, parseInt(String(req.query.page || "0"), 10) || 0);
+      const size = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
+      const categoryId = req.query.classifyNo as string;
+      const search = req.query.integrateSearch as string;
+      const params = new URLSearchParams({ page: String(page), size: String(size) });
+      if (categoryId && !Number.isNaN(Number(categoryId))) params.set("classify", categoryId);
+      if (search?.trim()) params.set("name", search.trim());
+      const { editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: `https://dev.flipedu.net/api/v2/vocabularies?${params}`, headers: editor },
+        { url: `https://www.flipedu.net/api/v2/vocabularies?${params}`, headers: editor },
+      ]);
+      if (!result) return res.status(500).json({ message: "단어 자료를 불러올 수 없습니다." });
+      res.json(result.data);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "단어 자료 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.post(api.wordPapers.create.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const input = api.wordPapers.create.input.parse(req.body);
+      const { editor } = getAuthHeaders(req.session);
+      const wordForms = input.words.map((word) => ({
+        eng: word.eng,
+        phonetic: word.phonetic || "",
+        speeches: word.part ? [word.part] : [],
+        subjectGroupName: "eng",
+        isShared: true,
+        meanings: [{
+          kor: word.kor,
+          parts: word.part ? [word.part] : [],
+          exampleInEng: word.exampleInEng || "",
+          exampleInKor: word.exampleInKor || "",
+        }],
+      }));
+      const wordsRes = await fetch("https://dev.flipedu.net/api/v2/words", {
+        method: "PUT",
+        headers: editor,
+        body: JSON.stringify(wordForms),
+      });
+      if (!wordsRes.ok) {
+        const errText = await wordsRes.text();
+        return res.status(wordsRes.status).json({ message: `단어 생성 실패: ${errText.slice(0, 300)}` });
+      }
+      const createdWordsRaw = await wordsRes.json();
+      const createdWords = Array.isArray(createdWordsRaw) ? createdWordsRaw : extractList(createdWordsRaw);
+      const contents = createdWords.map((word: any, index: number) => {
+        const firstMeaning = Array.isArray(word.meanings) ? word.meanings[0] : null;
+        return {
+          ordering: index,
+          id: word.id ?? word.wordNo,
+          descriptionId: firstMeaning?.id ? [firstMeaning.id] : [],
+        };
+      });
+      const vocabularyBody: any = {
+        name: input.title,
+        subjectGroupName: "eng",
+        type: "WORD_PAPER",
+        isShared: true,
+        contents,
+      };
+      if (input.categoryId) vocabularyBody.classifyId = input.categoryId;
+      const paperRes = await fetch("https://dev.flipedu.net/api/v2/vocabularies", {
+        method: "POST",
+        headers: editor,
+        body: JSON.stringify(vocabularyBody),
+      });
+      if (!paperRes.ok) {
+        const errText = await paperRes.text();
+        return res.status(paperRes.status).json({ message: `단어 자료 생성 실패: ${errText.slice(0, 300)}` });
+      }
+      res.status(201).json(await paperRes.json());
+    } catch (err: any) {
+      if (err?.name === "ZodError") return res.status(400).json({ message: "입력값을 확인하세요.", issues: err.issues });
+      res.status(500).json({ message: err?.message || "단어 자료 생성 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.delete(api.wordPapers.delete.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const { editor } = getAuthHeaders(req.session);
+      const vocabularyNo = req.params.vocabularyNo;
+      const delRes = await fetch(`https://dev.flipedu.net/api/v2/vocabularies/${vocabularyNo}`, {
+        method: "DELETE",
+        headers: editor,
+      });
+      if (!delRes.ok) {
+        const errText = await delRes.text();
+        return res.status(delRes.status).json({ message: `단어 자료 삭제 실패: ${errText.slice(0, 300)}` });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "단어 자료 삭제 중 오류가 발생했습니다." });
+    }
+  });
+
   const normalizeQuestionSubjectTree = (nodes: any[], depth = 0): any[] =>
     (nodes || []).map((node: any) => {
       const subjectNo = Number(node.subjectNo ?? node.no ?? node.id ?? node.subjectId ?? node.classifyNo);

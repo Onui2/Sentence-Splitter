@@ -51,6 +51,8 @@ function stripHtml(html: string): string {
   return div.textContent || div.innerText || "";
 }
 
+const DEFAULT_SHADOWING_QUESTION = "아래 문장을 읽고 녹음하세요.";
+
 function MoveCategoryNode({ node, depth, expandedNodes, toggleExpand, onSelect, isPending }: {
   node: any;
   depth: number;
@@ -289,16 +291,16 @@ export default function Home() {
       );
       const failedCount = results.filter(r => r.status === "rejected").length;
       if (failedCount > 0) {
-        toast({ title: "일부 이동 실패", description: `${failedCount}개 학습지를 이동하지 못했습니다.`, variant: "destructive" });
+        toast({ title: "일부 이동 실패", description: `${failedCount}개 자료를 이동하지 못했습니다.`, variant: "destructive" });
       } else {
-        toast({ title: `${movingPaperNos.length}개 학습지가 이동되었습니다.` });
+        toast({ title: `${movingPaperNos.length}개 자료가 이동되었습니다.` });
       }
       setMoveCategoryOpen(false);
       setMovingPaperNos([]);
       setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: [api.flipPapers.list.path] });
     } catch {
-      toast({ title: "이동 실패", description: "학습지 이동에 실패했습니다.", variant: "destructive" });
+      toast({ title: "이동 실패", description: "자료 이동에 실패했습니다.", variant: "destructive" });
     } finally {
       setMovePending(false);
     }
@@ -347,10 +349,13 @@ export default function Home() {
 
   const displayCategories = filterCategories(flipCategories || [], categorySearch);
 
+  const [search, setSearch] = useState("");
+
   const { data: papersData, isLoading } = useFlipPapers(
     categoryId || undefined,
     page,
-    pageSize
+    pageSize,
+    search
   );
 
   const papers = papersData?.contents || [];
@@ -359,12 +364,9 @@ export default function Home() {
 
   const { data: paperDetail, isLoading: detailLoading } = useFlipPaperDetail(selectedPaperNo);
 
-  const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  const filteredPapers = papers.filter((p: any) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPapers = papers;
 
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -664,7 +666,7 @@ export default function Home() {
                 placeholder="쉐도잉 검색" 
                 className="pl-10 bg-muted border-none rounded-md h-10 text-[13px] focus-visible:ring-1 focus-visible:ring-border"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(0); setSelectedIds([]); }}
                 data-testid="input-paper-search"
               />
             </div>
@@ -691,7 +693,7 @@ export default function Home() {
                     </TableHead>
                     <TableHead className="text-muted-foreground font-medium text-[12px] h-10 border-r border-border/30">
                       <div className="flex items-center justify-between px-1">
-                        쉐도잉 학습지
+                        쉐도잉 자료
                       </div>
                     </TableHead>
                     {!isMobile && (
@@ -731,7 +733,7 @@ export default function Home() {
                   ) : filteredPapers.length === 0 ? (
                     <TableRow className="border-border/30">
                       <TableCell colSpan={isMobile ? 2 : 5} className="text-center text-muted-foreground py-12 text-[13px]">
-                        학습지가 없습니다.
+                        자료가 없습니다.
                       </TableCell>
                     </TableRow>
                   ) : filteredPapers.map((paper: any) => (
@@ -885,7 +887,7 @@ export default function Home() {
                 <DialogTitle className="text-[16px] font-semibold">
                   {editingPaper ? "쉐도잉 수정" : "쉐도잉 상세"}
                 </DialogTitle>
-                <DialogDescription className="sr-only">학습지 내용 보기 및 수정</DialogDescription>
+                <DialogDescription className="sr-only">쉐도잉 자료 내용 보기 및 수정</DialogDescription>
               </div>
               <div className="flex items-center gap-1 mr-8">
                 {!editingPaper && !detailLoading && (
@@ -913,7 +915,7 @@ export default function Home() {
                         setPaperNameInput(paperDetail?.name || "");
                         const sentences = detailSentences.map((s: any) => ({ ordering: s.ordering, shadowingNo: s.shadowingNo, english: s.english, korean: s.korean }));
                         setEditedSentences(sentences);
-                        const firstQuestion = sentences.length > 0 ? sentences[0].korean : "다음 문장을 듣고 따라 말해보세요.";
+                        const firstQuestion = sentences.length > 0 ? sentences[0].korean : DEFAULT_SHADOWING_QUESTION;
                         setDefaultDetailQuestion(firstQuestion);
                         setDeletedShadowingNos([]);
                         setAddSentencesText("");
@@ -947,7 +949,7 @@ export default function Home() {
               <Skeleton className="h-9 w-full" />
             ) : editingPaper ? (
               <div className="space-y-1">
-                <label className="text-[12px] font-medium text-muted-foreground">학습지 이름 <span className="text-red-500">*</span></label>
+                <label className="text-[12px] font-medium text-muted-foreground">자료 이름 <span className="text-red-500">*</span></label>
                 <Input
                   ref={paperNameInputRef}
                   value={paperNameInput}
@@ -1269,7 +1271,7 @@ export default function Home() {
         <DialogContent className="max-w-sm" data-testid="modal-move-category">
           <DialogTitle className="text-[15px] font-semibold">카테고리 이동</DialogTitle>
           <DialogDescription className="text-[13px] text-muted-foreground">
-            {movingPaperNos.length}개 학습지를 이동할 카테고리를 선택하세요.
+            {movingPaperNos.length}개 자료를 이동할 카테고리를 선택하세요.
           </DialogDescription>
           <div className="max-h-[300px] overflow-y-auto border border-border rounded-md p-2 space-y-0.5">
             {(flipCategories || []).map((cat: any) => (
@@ -1297,12 +1299,12 @@ export default function Home() {
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent data-testid="modal-delete-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>학습지 삭제</AlertDialogTitle>
+            <AlertDialogTitle>자료 삭제</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget === "bulk"
-                ? `${selectedIds.length}개 학습지를 삭제하시겠습니까?`
-                : "이 학습지를 삭제하시겠습니까?"}
-              {" "}삭제된 학습지는 복구할 수 없습니다.
+                ? `${selectedIds.length}개 자료를 삭제하시겠습니까?`
+                : "이 자료를 삭제하시겠습니까?"}
+              {" "}삭제된 자료는 복구할 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1316,7 +1318,7 @@ export default function Home() {
                   const results = await Promise.allSettled(selectedIds.map(id => deletePaperMutation.mutateAsync(id)));
                   const failedCount = results.filter(r => r.status === "rejected").length;
                   if (failedCount > 0) {
-                    toast({ title: "일부 삭제 실패", description: `${failedCount}개 학습지를 삭제하지 못했습니다.`, variant: "destructive" });
+                    toast({ title: "일부 삭제 실패", description: `${failedCount}개 자료를 삭제하지 못했습니다.`, variant: "destructive" });
                   }
                   setSelectedIds([]);
                   if (selectedPaperNo && selectedIds.includes(selectedPaperNo)) {
