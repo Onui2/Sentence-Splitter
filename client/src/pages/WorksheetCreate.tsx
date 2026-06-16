@@ -191,6 +191,9 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
   const [bulkAiLoading, setBulkAiLoading] = useState(false);
   const [bulkAiProgress, setBulkAiProgress] = useState<{ current: number; total: number } | null>(null);
   const [singleImportText, setSingleImportText] = useState("");
+  const [importMode, setImportMode] = useState<"text" | "image">("text");
+  const [draftListOpen, setDraftListOpen] = useState(false);
+  const [savedDrafts, setSavedDrafts] = useState<any[]>([]);
 
   // Question picker (유사문제만들기) state
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -755,6 +758,52 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
     updateItem(currentItem.id, updates);
     setSingleImportText("");
     toast({ title: "입력 완료", description: "선택된 문항에 내용이 입력되었습니다." });
+  };
+
+  const saveDraft = async () => {
+    const payload = { title, classifyNo: categoryId, questions: items };
+    const res = await apiRequest("POST", api.worksheetDrafts.create.path, {
+      title: title.trim() || "?? ??",
+      data: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast({ title: "???? ??", description: data?.message || "???? ?????.", variant: "destructive" });
+      return;
+    }
+    toast({ title: "???? ??", description: "?? ??? ?? ??? ???????." });
+  };
+
+  const openDraftList = async () => {
+    const res = await fetch(api.worksheetDrafts.list.path);
+    const data = await res.json().catch(() => []);
+    if (!res.ok) {
+      toast({ title: "???? ??", description: data?.message || "??? ???? ?????.", variant: "destructive" });
+      return;
+    }
+    setSavedDrafts(Array.isArray(data) ? data : []);
+    setDraftListOpen(true);
+  };
+
+  const loadDraft = (draft: any) => {
+    const payload = typeof draft.data === "string" ? JSON.parse(draft.data) : draft.data;
+    const questions = payload?.questions?.length ? payload.questions : [createEmptyQuestion()];
+    setTitle(payload?.title || draft.title || "");
+    setCategoryId(payload?.classifyNo ?? payload?.categoryId);
+    setItems(questions);
+    setSelectedItemId(questions[0].id);
+    setDraftListOpen(false);
+    toast({ title: "???? ????", description: (draft.title || "?? ??") + "? ??????." });
+  };
+
+  const deleteDraft = async (id: number) => {
+    const res = await apiRequest("DELETE", buildUrl(api.worksheetDrafts.delete.path, { id }));
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast({ title: "???? ?? ??", description: data?.message || "???? ?????.", variant: "destructive" });
+      return;
+    }
+    setSavedDrafts((prev) => prev.filter((draft) => draft.id !== id));
   };
 
   const handleClose = () => {
@@ -1354,7 +1403,7 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
           role="dialog"
           aria-modal="true"
           aria-label="학습지 만들기"
-          className={`bg-background rounded-xl shadow-2xl flex flex-col outline-none ${isMobile ? "w-full h-full rounded-none" : "w-[1200px] max-h-[90vh]"}`}
+          className={`bg-background rounded-xl shadow-2xl flex flex-col outline-none ${isMobile ? "w-full h-full rounded-none" : "w-[min(1750px,calc(100vw-64px))] max-h-[92vh]"}`}
           data-testid="worksheet-create-modal"
         >
           {/* Modal header */}
@@ -1555,6 +1604,23 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
                 })}
               </div>
               <div className="border-t border-border p-2 space-y-0.5">
+                <button
+                  onClick={() => {
+                    setPickerSourceId(currentItem?.id || selectedItemId);
+                    setPickerPaperNo(null);
+                    setPickerPaperDetail(null);
+                    setSelectedPickerQNos(new Set());
+                    setPickerSearch("");
+                    setPickerDebouncedSearch("");
+                    setPickerCategoryId(null);
+                    setPickerPage(0);
+                    setPickerOpen(true);
+                  }}
+                  className="mb-2 flex h-8 w-full items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-[12px] font-medium text-blue-600 hover:bg-blue-100"
+                  data-testid="btn-question-import-sidebar"
+                >
+                  문제 불러오기
+                </button>
                 {(["CHOICE", "SHORT_ANSWER", "WORD_ORDER"] as QuestionType[]).map(type => (
                   <button
                     key={type}
@@ -1860,10 +1926,31 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
             )}
 
             {/* RIGHT: Tools panel */}
-            <div className="w-56 border-l border-border flex flex-col shrink-0 bg-muted/10">
-              <div className="flex items-center gap-1.5 px-3 pt-3 pb-1.5 border-b border-border shrink-0">
-                <AlignLeft className="w-3 h-3 text-blue-600" />
-                <span className="text-[10px] text-blue-600 font-medium">{currentIdx + 1}번 문항에 입력</span>
+            <div className="w-[360px] border-l border-border flex flex-col shrink-0 bg-muted/10">
+              <div className="grid grid-cols-2 border-b border-border shrink-0">
+                <button
+                  type="button"
+                  className={`flex h-11 items-center justify-center gap-1.5 text-[13px] font-semibold ${importMode === "text" ? "bg-background text-blue-600" : "text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setImportMode("text")}
+                  data-testid="btn-import-mode-text"
+                >
+                  <AlignLeft className="w-3.5 h-3.5" />
+                  텍스트로 문제 등록
+                </button>
+                <button
+                  type="button"
+                  className={`flex h-11 items-center justify-center gap-1.5 border-l border-border text-[13px] font-semibold ${importMode === "image" ? "bg-background text-blue-600" : "text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setImportMode("image")}
+                  data-testid="btn-import-mode-image"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  이미지로 문제 등록
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 px-4 pt-4 pb-2 shrink-0">
+                <span className="text-[12px] text-muted-foreground">선택된</span>
+                <span className="text-[12px] text-blue-600 font-semibold">{Math.max(currentIdx + 1, 1)}번</span>
+                <span className="text-[12px] text-muted-foreground">문항에 입력됩니다</span>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1885,21 +1972,39 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
                 </TooltipProvider>
               </div>
               <div className="flex-1 flex flex-col overflow-hidden p-3 min-h-0">
-                <Textarea
-                  placeholder={`질문\n지문 내용(선택)\n① 보기1\n② 보기2\n③ 보기3\n해설`}
-                  value={singleImportText}
-                  onChange={(e) => setSingleImportText(e.target.value)}
-                  className="flex-1 text-[11px] bg-background border-border resize-none font-mono"
-                  data-testid="textarea-single-import"
-                />
-                <Button
-                  className="mt-2 w-full h-8 text-[12px] bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => parseSingleQuestionText(singleImportText)}
-                  disabled={!singleImportText.trim()}
-                  data-testid="btn-single-import"
-                >
-                  입력
-                </Button>
+                {importMode === "text" ? (
+                  <>
+                    <Textarea
+                      placeholder={`질문\n지문 내용(선택)\n① 보기1\n② 보기2\n③ 보기3\n정답 1\n해설`}
+                      value={singleImportText}
+                      onChange={(e) => setSingleImportText(e.target.value)}
+                      className="flex-1 text-[12px] bg-background border-border resize-none font-mono"
+                      data-testid="textarea-single-import"
+                    />
+                    <Button
+                      className="mt-3 w-full h-9 text-[13px] bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={() => parseSingleQuestionText(singleImportText)}
+                      disabled={!singleImportText.trim()}
+                      data-testid="btn-single-import"
+                    >
+                      입력
+                    </Button>
+                  </>
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-border bg-background p-6 text-center">
+                    <ImageIcon className="mb-3 h-8 w-8 text-muted-foreground" />
+                    <p className="text-[13px] font-medium">이미지에서 문제 추출</p>
+                    <p className="mt-1 text-[12px] text-muted-foreground">시험지 사진을 올리면 AI가 문항을 읽어옵니다.</p>
+                    <Button
+                      className="mt-4 h-9 bg-purple-600 text-white hover:bg-purple-700"
+                      onClick={() => { setImageExtractOpen(true); setExtractImage(null); setExtractedQuestions([]); setSelectedExtractIds(new Set()); }}
+                      data-testid="btn-image-import-panel"
+                    >
+                      <ScanLine className="mr-1.5 h-4 w-4" />
+                      이미지 첨부
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1909,6 +2014,12 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
           <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-background shrink-0">
             <span className="text-[12px] text-muted-foreground">{validItems.length}개 문항 작성됨</span>
             <div className="flex items-center gap-2">
+              <Button variant="outline" className="h-9 text-[13px] px-4" onClick={openDraftList} data-testid="btn-load-draft">
+                임시저장 목록
+              </Button>
+              <Button variant="outline" className="h-9 text-[13px] px-4" onClick={saveDraft} data-testid="btn-save-draft">
+                임시저장
+              </Button>
               <Button variant="outline" className="h-9 text-[13px] px-3" onClick={() => setPreviewOpen(true)} data-testid="btn-preview">
                 <Eye className="w-3.5 h-3.5 mr-1.5" />미리보기
               </Button>
@@ -1925,6 +2036,46 @@ export default function WorksheetCreateModal({ open, onClose, defaultCategoryId,
           </div>
         </div>
       </div>
+
+      {draftListOpen && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/60" onClick={(e) => { if (e.target === e.currentTarget) setDraftListOpen(false); }}>
+          <div className="flex max-h-[80vh] w-[560px] flex-col rounded-xl bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="text-[15px] font-bold">임시저장 목록</h2>
+              <button className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setDraftListOpen(false)}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {savedDrafts.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border py-12 text-center text-[13px] text-muted-foreground">
+                  임시저장된 학습지가 없습니다.
+                </div>
+              ) : (
+                <div className="divide-y divide-border rounded-md border border-border">
+                  {savedDrafts.map((draft) => (
+                    <div key={draft.id} className="flex items-center gap-3 px-4 py-3">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-semibold">{draft.title || "제목 없음"}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {new Date(draft.updatedAt || draft.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" className="h-8" onClick={() => loadDraft(draft)}>
+                        불러오기
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteDraft(draft.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Preview overlay */}
       {previewOpen && (

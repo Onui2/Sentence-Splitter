@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookA, BookOpen, CheckCircle2, Crown, FileText, KeyRound, LogOut, XCircle } from "lucide-react";
+import { BookA, BookOpen, CheckCircle2, Crown, FileText, KeyRound, LogOut, Video, XCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 import {
@@ -44,6 +44,7 @@ const navItems = [
   { href: "/", label: "나만의 쉐도잉", icon: FileText, active: (path: string) => path === "/" || path.startsWith("/create") },
   { href: "/worksheet", label: "나만의 학습지", icon: BookOpen, active: (path: string) => path.startsWith("/worksheet") },
   { href: "/words", label: "나만의 단어", icon: BookA, active: (path: string) => path.startsWith("/words") },
+  { href: "/video", label: "나만의 영상", icon: Video, active: (path: string) => path.startsWith("/video") },
 ];
 
 export function AppSidebar() {

@@ -250,6 +250,36 @@ export const api = {
       },
     },
   },
+  worksheetDrafts: {
+    list: {
+      method: "GET" as const,
+      path: "/api/worksheet-drafts" as const,
+      responses: {
+        200: z.array(z.any()),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/worksheet-drafts" as const,
+      input: z.object({
+        title: z.string().min(1),
+        data: z.string().min(1),
+      }),
+      responses: {
+        201: z.any(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    delete: {
+      method: "DELETE" as const,
+      path: "/api/worksheet-drafts/:id" as const,
+      responses: {
+        200: z.object({ success: z.boolean() }),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
   questionPapers: {
     list: {
       method: "GET" as const,
@@ -383,6 +413,41 @@ export const api = {
       },
     },
   },
+  questionPaperDbCategories: {
+    list: {
+      method: "GET" as const,
+      path: "/api/question-paper-db-categories" as const,
+      responses: {
+        200: z.array(z.any()),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
+  questionPaperDb: {
+    list: {
+      method: "GET" as const,
+      path: "/api/question-paper-db" as const,
+      responses: {
+        200: z.object({
+          totalPages: z.number().optional(),
+          totalElementsCnt: z.number().optional(),
+          size: z.number().optional(),
+          page: z.number().optional(),
+          elementsCntOfPage: z.number().optional(),
+          contents: z.array(z.any()).optional(),
+        }).passthrough(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    detail: {
+      method: "GET" as const,
+      path: "/api/question-paper-db/:paperNo" as const,
+      responses: {
+        200: z.any(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
   questionSubjects: {
     list: {
       method: "GET" as const,
@@ -488,6 +553,29 @@ export const api = {
       path: "/api/videos/:videoNo" as const,
       responses: {
         200: z.object({ success: z.boolean() }),
+        401: z.object({ message: z.string() }),
+      },
+    },
+  },
+  videoDb: {
+    list: {
+      method: "GET" as const,
+      path: "/api/video-db" as const,
+      responses: {
+        200: z.any(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    import: {
+      method: "POST" as const,
+      path: "/api/video-db/import" as const,
+      input: z.object({
+        videoNo: z.union([z.number(), z.string()]),
+        categoryId: z.number().optional(),
+      }),
+      responses: {
+        201: z.any(),
+        400: z.object({ message: z.string() }),
         401: z.object({ message: z.string() }),
       },
     },

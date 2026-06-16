@@ -15,6 +15,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500
 // In-memory cache to avoid FlipEdu rate limiting on category endpoints
 const apiCache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const worksheetDrafts = new Map<string, Array<{ id: number; sessionKey: string; title: string; data: string; createdAt: string; updatedAt: string }>>();
+let worksheetDraftId = 1;
 
 function getCached(key: string): any | null {
   const entry = apiCache.get(key);
@@ -204,6 +206,86 @@ export async function registerRoutes(
       lms["Cookie"] = session.flipCookies;
     }
     return { lms, editor };
+  }
+
+  async function refreshLmsAuth(session: any): Promise<void> {
+    if (!session?.username || !session?.flipCredential || !session?.flipBrandNo || !session?.flipBranchNo) return;
+    let plainPassword = session.flipCredential;
+    try { plainPassword = decodeURIComponent(Buffer.from(session.flipCredential, "base64").toString("utf8")); } catch {}
+    const lmsBody = {
+      brandNo: session.flipBrandNo,
+      branchNo: session.flipBranchNo,
+      username: session.username,
+      credential: session.flipCredential,
+    };
+    const lmsBodyPlain = {
+      brandNo: session.flipBrandNo,
+      branchNo: session.flipBranchNo,
+      username: session.username,
+      password: plainPassword,
+    };
+    const primaryBody = {
+      sysSeq: 0,
+      brand: Number(session.flipBrandNo),
+      type: "STAFF",
+      branch: Number(session.flipBranchNo),
+      username: session.username,
+      password: plainPassword,
+    };
+    const primaryBodyStr = {
+      sysSeq: 0,
+      brand: String(session.flipBrandNo),
+      type: "STAFF",
+      branch: String(session.flipBranchNo),
+      username: session.username,
+      password: plainPassword,
+    };
+    const endpoints = [
+      "https://dev.lms.flipedu.net/api/auth/login",
+      "https://lms.flipedu.net/api/auth/login",
+      "https://dev.lms.flipedu.net/api/flipedu/auth/login",
+      "https://lms.flipedu.net/api/flipedu/auth/login",
+    ];
+    const bodyVariants = [
+      { name: "lmsCredential", body: lmsBody },
+      { name: "lmsPlain", body: lmsBodyPlain },
+      { name: "primary", body: primaryBody },
+      { name: "primaryStr", body: primaryBodyStr },
+    ];
+    for (const endpoint of endpoints) {
+      for (const variant of bodyVariants) {
+        try {
+          const r = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+              "Origin": endpoint.includes("dev.") ? "https://editor.flipedu.net" : "https://teacher.flipedu.net",
+              "Referer": endpoint.includes("dev.") ? "https://editor.flipedu.net/" : "https://teacher.flipedu.net/",
+            },
+            body: JSON.stringify(variant.body),
+            redirect: "follow",
+          });
+          const data: any = await r.json().catch(() => ({}));
+          console.log(`[AUTH] refreshLmsAuth ${endpoint} ${variant.name} -> ${r.status}`);
+          if (!r.ok) continue;
+          const token = r.headers.get("x-auth-token") || data?.token || data?.user?.token || data?.authToken || data?.accessToken || "";
+          let setCookies: string[] = [];
+          if (typeof (r.headers as any).getSetCookie === "function") setCookies = (r.headers as any).getSetCookie();
+          else {
+            const raw = r.headers.get("set-cookie");
+            if (raw) setCookies = [raw];
+          }
+          const cookieStr = setCookies.map((c: string) => c.split(";")[0]).join("; ");
+          if (token) session.authToken = token;
+          if (cookieStr) session.flipCookies = cookieStr;
+          console.log(`[AUTH] refreshLmsAuth ok token=${token ? "yes" : "no"} cookies=${cookieStr ? "yes" : "no"}`);
+          return;
+        } catch (err) {
+          console.log(`[AUTH] refreshLmsAuth failed:`, err);
+        }
+      }
+    }
   }
 
   // Helper: try multiple FlipEdu endpoints in order, return first success
@@ -1064,6 +1146,124 @@ export async function registerRoutes(
     }
   });
 
+  app.get(api.questionPaperDbCategories.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      const subjectGroup = getEffectiveSubjectGroup(req).split(",")[0].trim() || "eng";
+      const cacheKey = `qpdbcat:${req.session.username}:${subjectGroup}`;
+      const cached = getCached(cacheKey);
+      if (cached) return res.json(cached);
+
+      const { lms, editor } = getAuthHeaders(req.session);
+      const qs = `?subjectGroup=${encodeURIComponent(subjectGroup)}`;
+      const result = await tryFlipEndpoints([
+        { url: `https://dev.lms.flipedu.net/api/flipedu/question-paper/classifys/all${qs}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/question-paper/classifys/all${qs}`, headers: lms },
+        { url: `https://dev.flipedu.net/api/v2/question-paper/classifys/all${qs}`, headers: editor },
+      ]);
+
+      if (!result) {
+        const stale = apiCache.get(cacheKey);
+        if (stale) return res.json(stale.data);
+        return res.status(500).json({ message: "영플립DB 카테고리를 불러오지 못했습니다." });
+      }
+      const data = extractList(result.data);
+      setCache(cacheKey, data);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "영플립DB 카테고리 조회 실패" });
+    }
+  });
+
+  app.get(api.questionPaperDb.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      const subjectGroup = getEffectiveSubjectGroup(req).split(",")[0].trim() || "eng";
+      const classifyNo = req.query.classifyNo as string;
+      const pageNum = Math.max(0, parseInt(String(req.query.page || "0"), 10) || 0);
+      const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
+      const search = req.query.integrateSearch as string;
+
+      let qs = `?subjectGroup=${encodeURIComponent(subjectGroup)}&page=${pageNum}&size=${sizeNum}`;
+      if (classifyNo && !isNaN(Number(classifyNo))) qs += `&classifyNo=${classifyNo}`;
+      if (search?.trim()) qs += `&integrateSearch=${encodeURIComponent(search.trim())}`;
+
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: `https://dev.lms.flipedu.net/api/flipedu/question-papers${qs}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/question-papers${qs}`, headers: lms },
+        { url: `https://dev.flipedu.net/api/v2/question-papers${qs}`, headers: editor },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "영플립DB 학습지를 불러오지 못했습니다." });
+      res.json(result.data);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "영플립DB 학습지 조회 실패" });
+    }
+  });
+
+  app.get(api.questionPaperDb.detail.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      const paperNo = req.params.paperNo;
+      const { lms, editor } = getAuthHeaders(req.session);
+      const result = await tryFlipEndpoints([
+        { url: `https://dev.lms.flipedu.net/api/flipedu/question-paper/${paperNo}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/question-paper/${paperNo}`, headers: lms },
+        { url: `https://dev.flipedu.net/api/v2/question-paper/${paperNo}`, headers: editor },
+      ]);
+      if (!result) return res.status(500).json({ message: "영플립DB 학습지 상세를 불러오지 못했습니다." });
+      res.json(result.data);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "영플립DB 학습지 상세 조회 실패" });
+    }
+  });
+
+  app.get(api.worksheetDrafts.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const sessionKey = `branch_${req.session.branchNo || "0"}_user_${req.session.username}`;
+      res.json(worksheetDrafts.get(sessionKey) || []);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "임시저장 목록 조회 실패" });
+    }
+  });
+
+  app.post(api.worksheetDrafts.create.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const input = api.worksheetDrafts.create.input.parse(req.body);
+      const sessionKey = `branch_${req.session.branchNo || "0"}_user_${req.session.username}`;
+      const now = new Date().toISOString();
+      const draft = {
+        id: worksheetDraftId++,
+        sessionKey,
+        title: input.title,
+        data: input.data,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const drafts = [draft, ...(worksheetDrafts.get(sessionKey) || [])].slice(0, 30);
+      worksheetDrafts.set(sessionKey, drafts);
+      res.status(201).json(draft);
+    } catch (err: any) {
+      if (err?.name === "ZodError") return res.status(400).json({ message: "입력값을 확인하세요.", issues: err.issues });
+      res.status(500).json({ message: err?.message || "임시저장 실패" });
+    }
+  });
+
+  app.delete(api.worksheetDrafts.delete.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      const sessionKey = `branch_${req.session.branchNo || "0"}_user_${req.session.username}`;
+      const id = Number(req.params.id);
+      worksheetDrafts.set(sessionKey, (worksheetDrafts.get(sessionKey) || []).filter((draft) => draft.id !== id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "임시저장 삭제 실패" });
+    }
+  });
+
   app.get("/api/question-papers-debug/:paperNo", async (req, res) => {
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
@@ -1087,7 +1287,7 @@ export async function registerRoutes(
       const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
       const search = req.query.integrateSearch as string;
 
-      let qs = `?subjectGroup=eng&page=${pageNum}&size=${sizeNum}`;
+      let qs = `?subjectGroup=eng&page=${pageNum}&size=${sizeNum}&sort=updatedAt,DESC`;
       if (classifyNo && !isNaN(Number(classifyNo))) qs += `&classifyNo=${classifyNo}`;
       if (search?.trim()) qs += `&integrateSearch=${encodeURIComponent(search.trim())}`;
 
@@ -1118,9 +1318,22 @@ export async function registerRoutes(
       if (!result) return res.status(500).json({ message: "학습지 상세를 불러올 수 없습니다." });
       const data = result.data;
 
-      // Normalize classifyNo to top level so client can reliably access it
+      // Normalize classifyNo to top level so client can reliably access it.
+      // Detail response carries `classifys` as a nested tree (root → ... → leaf);
+      // the deepest leaf is the paper's actual category, so walk down first-child.
       if (!data.classifyNo) {
-        data.classifyNo = data.classify?.classifyNo ?? data.category?.classifyNo ?? data.paperClassify?.classifyNo ?? null;
+        const deepestLeaf = (node: any): number | null => {
+          if (!node || typeof node !== "object") return null;
+          const kids = Array.isArray(node.children) ? node.children : [];
+          if (kids.length === 0) return node.classifyNo ?? null;
+          return deepestLeaf(kids[0]) ?? node.classifyNo ?? null;
+        };
+        data.classifyNo =
+          deepestLeaf(data.classifys) ??
+          data.classify?.classifyNo ??
+          data.category?.classifyNo ??
+          data.paperClassify?.classifyNo ??
+          null;
       }
       console.log(`[question-papers detail] paperNo=${paperNo} classifyNo=${data.classifyNo} name=${data.name}`);
 
@@ -1422,6 +1635,7 @@ export async function registerRoutes(
   app.get(api.videoCategories.list.path, async (req, res) => {
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      await refreshLmsAuth(req.session);
 
       const cacheKey = `videocat:${req.session.username}:${req.session.flipBranchNo || ''}`;
       const cached = getCached(cacheKey);
@@ -1431,20 +1645,40 @@ export async function registerRoutes(
       const lmsHeaders: Record<string, string> = { "Accept": "application/json" };
       if (req.session.authToken && req.session.authToken !== "authenticated") lmsHeaders["x-auth-token"] = req.session.authToken;
 
-      let flipRes = await fetch("https://lms.flipedu.net/api/branch/video/classifys/all", { headers: lmsHeaders });
-      if (!flipRes.ok) {
-        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/video/classifys/all", { headers: editorHeaders });
+      const subjectGroup = getEffectiveSubjectGroup(req).split(",")[0].trim() || "eng";
+      const categoryEndpoints = [
+        { url: `https://lms.flipedu.net/api/branch/concept/classifys/all?subjectGroup=${subjectGroup}&isIncludeNonShare=false&isInContents=true`, headers: lmsHeaders },
+        { url: `https://lms.flipedu.net/api/branch/concept/classifys?subjectGroup=${subjectGroup}&isIncludeNonShare=false&isInContents=true`, headers: lmsHeaders },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/concept/classifys/all?subjectGroup=${subjectGroup}&isIncludeNonShare=false&isInContents=true`, headers: editorHeaders },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/concept/classifys?subjectGroup=${subjectGroup}&isIncludeNonShare=false&isInContents=true`, headers: editorHeaders },
+      ];
+      let data: any[] | null = null;
+      let lastStatus = 500;
+      for (const ep of categoryEndpoints) {
+        const r = await fetch(ep.url, { headers: ep.headers });
+        lastStatus = r.status;
+        console.log(`[concept-categories] ${ep.url} -> ${r.status}`);
+        if (!r.ok) continue;
+        const raw = await r.json();
+        const list = extractList(raw);
+        const names = JSON.stringify(list);
+        if (names.includes("기초 영어 시험자료") || names.includes("고등영어") || names.includes("중등영어") || list.length > 0) {
+          data = list;
+          break;
+        }
       }
-      if (!flipRes.ok) {
-        flipRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/video-classifys", { headers: editorHeaders });
+      if (!data && subjectGroup === "eng") {
+        data = [
+          { classifyNo: 11574, name: "기초 영어 시험자료", level: 1, ordering: 0, children: [] },
+          { classifyNo: 11575, name: "고등영어", level: 1, ordering: 1, children: [] },
+          { classifyNo: 11577, name: "중등영어", level: 1, ordering: 2, children: [] },
+        ];
       }
-      if (!flipRes.ok) {
+      if (!data) {
         const stale = apiCache.get(cacheKey);
         if (stale) return res.json(stale.data);
-        return res.status(flipRes.status).json({ message: "영상 카테고리를 불러올 수 없습니다." });
+        return res.status(lastStatus).json({ message: "영상 카테고리를 불러올 수 없습니다." });
       }
-      const raw = await flipRes.json();
-      const data = extractList(raw);
       setCache(cacheKey, data);
       res.json(data);
     } catch {
@@ -1521,6 +1755,7 @@ export async function registerRoutes(
   app.get(api.videos.list.path, async (req, res) => {
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
+      await refreshLmsAuth(req.session);
       const editorHeaders: Record<string, string> = { "Accept": "application/json", "Cookie": req.session.flipCookies || "" };
       const lmsHeaders: Record<string, string> = { "Accept": "application/json" };
       if (req.session.authToken && req.session.authToken !== "authenticated") lmsHeaders["x-auth-token"] = req.session.authToken;
@@ -1557,6 +1792,78 @@ export async function registerRoutes(
     } catch (err) {
       console.log(`[ERROR] Videos fetch error:`, err);
       res.status(500).json({ message: "영상 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.get(api.videoDb.list.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      await refreshLmsAuth(req.session);
+      const pageNum = Math.max(0, parseInt(String(req.query.page || "0"), 10) || 0);
+      const sizeNum = Math.min(100, Math.max(1, parseInt(String(req.query.size || "20"), 10) || 20));
+      const search = req.query.integrateSearch as string;
+      const { lms, editor } = getAuthHeaders(req.session);
+      const today = new Date();
+      const from = new Date(today);
+      from.setFullYear(today.getFullYear() - 3);
+      const toDate = today.toISOString().slice(0, 10);
+      const fromDate = from.toISOString().slice(0, 10);
+
+      let qs = `?page=${pageNum}&size=${sizeNum}`;
+      if (search?.trim()) qs += `&integrateSearch=${encodeURIComponent(search.trim())}`;
+      const datedQs = `${qs}&from=${fromDate}&to=${toDate}&class=`;
+
+      const result = await tryFlipEndpoints([
+        { url: `https://dev.lms.flipedu.net/api/flipedu/my/videos${qs}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/my/videos${qs}`, headers: lms },
+        { url: `https://dev.flipedu.net/api/v2/my/videos${qs}`, headers: editor },
+        { url: `https://dev.flipedu.net/api/v2/videos${datedQs}`, headers: editor },
+      ]);
+
+      if (!result) return res.status(500).json({ message: "영플립DB 영상을 불러오지 못했습니다." });
+      res.json(result.data);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "영플립DB 영상 조회 실패" });
+    }
+  });
+
+  app.post(api.videoDb.import.path, async (req, res) => {
+    try {
+      if (!req.session.username) return res.status(401).json({ message: "?몄쬆???꾩슂?⑸땲??" });
+      await refreshLmsAuth(req.session);
+      const input = api.videoDb.import.input.parse(req.body);
+      const videoNo = String(input.videoNo);
+      const { lms, editor } = getAuthHeaders(req.session);
+
+      const detailResult = await tryFlipEndpoints([
+        { url: `https://dev.lms.flipedu.net/api/flipedu/my/videos/${videoNo}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/my/videos/${videoNo}`, headers: lms },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/videos/${videoNo}`, headers: editor },
+        { url: `https://dev.flipedu.net/api/v2/videos/${videoNo}`, headers: editor },
+      ]);
+      if (!detailResult) return res.status(404).json({ message: "가져올 영상을 찾지 못했습니다." });
+
+      const src = detailResult.data?.data ?? detailResult.data?.content ?? detailResult.data;
+      const payload: any = {
+        ...src,
+        id: undefined,
+        no: undefined,
+        videoNo: undefined,
+        name: src.name || src.title || src.subject || "가져온 영상",
+        title: src.title || src.name || src.subject || "가져온 영상",
+      };
+      if (input.categoryId) payload.classifyNo = input.categoryId;
+
+      const createResult = await tryFlipEndpoints([
+        { url: "https://dev.lms.flipedu.net/api/flipedu/branch/videos", method: "POST", headers: editor, body: payload },
+        { url: "https://lms.flipedu.net/api/branch/videos", method: "POST", headers: lms, body: payload },
+      ]);
+
+      if (!createResult) return res.status(500).json({ message: "나만의 영상으로 가져오지 못했습니다." });
+      res.status(201).json(createResult.data);
+    } catch (err: any) {
+      if (err?.name === "ZodError") return res.status(400).json({ message: "입력값을 확인하세요.", issues: err.issues });
+      res.status(500).json({ message: err?.message || "영상 가져오기 실패" });
     }
   });
 
@@ -1640,11 +1947,10 @@ export async function registerRoutes(
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const { lms, editor } = getAuthHeaders(req.session);
-      const query = "?subjectGroupName=eng&type=WORD_PAPER";
       const result = await tryFlipEndpoints([
-        { url: `https://dev.flipedu.net/api/v2/classifys/all${query}`, headers: editor },
-        { url: `https://www.flipedu.net/api/v2/classifys/all${query}`, headers: editor },
-        { url: `https://lms.flipedu.net/api/branch/WORD_PAPER/classifys/all${query}`, headers: lms },
+        { url: "https://lms.flipedu.net/api/branch/word-paper/classifys/all", headers: lms },
+        { url: "https://dev.lms.flipedu.net/api/flipedu/branch/word-paper/classifys/all", headers: editor },
+        { url: "https://dev.mstr.flipedu.net/api/branch/word-paper/classifys/all", headers: lms },
       ]);
       if (!result) return res.status(500).json({ message: "단어 카테고리를 불러올 수 없습니다." });
       res.json(extractList(result.data));
@@ -1661,12 +1967,13 @@ export async function registerRoutes(
       const categoryId = req.query.classifyNo as string;
       const search = req.query.integrateSearch as string;
       const params = new URLSearchParams({ page: String(page), size: String(size) });
-      if (categoryId && !Number.isNaN(Number(categoryId))) params.set("classify", categoryId);
-      if (search?.trim()) params.set("name", search.trim());
-      const { editor } = getAuthHeaders(req.session);
+      if (categoryId && !Number.isNaN(Number(categoryId))) params.set("classifyNo", categoryId);
+      if (search?.trim()) params.set("integrateSearch", search.trim());
+      const { lms, editor } = getAuthHeaders(req.session);
       const result = await tryFlipEndpoints([
-        { url: `https://dev.flipedu.net/api/v2/vocabularies?${params}`, headers: editor },
-        { url: `https://www.flipedu.net/api/v2/vocabularies?${params}`, headers: editor },
+        { url: `https://lms.flipedu.net/api/branch/word-papers?${params}`, headers: lms },
+        { url: `https://dev.lms.flipedu.net/api/flipedu/branch/word-papers?${params}`, headers: editor },
+        { url: `https://dev.mstr.flipedu.net/api/branch/word-papers?${params}`, headers: lms },
       ]);
       if (!result) return res.status(500).json({ message: "단어 자료를 불러올 수 없습니다." });
       res.json(result.data);
@@ -1679,52 +1986,93 @@ export async function registerRoutes(
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
       const input = api.wordPapers.create.input.parse(req.body);
-      const { editor } = getAuthHeaders(req.session);
+      const { lms, editor } = getAuthHeaders(req.session);
       const wordForms = input.words.map((word) => ({
         eng: word.eng,
-        phonetic: word.phonetic || "",
-        speeches: word.part ? [word.part] : [],
-        subjectGroupName: "eng",
-        isShared: true,
         meanings: [{
           kor: word.kor,
-          parts: word.part ? [word.part] : [],
-          exampleInEng: word.exampleInEng || "",
-          exampleInKor: word.exampleInKor || "",
+          speech: word.part || "NOUN",
+          level: "A",
         }],
+        examples: word.exampleInEng ? [{
+          exampleEng: word.exampleInEng,
+          exampleKor: word.exampleInKor || "",
+          level: "A",
+        }] : [],
       }));
-      const wordsRes = await fetch("https://dev.flipedu.net/api/v2/words", {
-        method: "PUT",
-        headers: editor,
+      let wordsRes = await fetch("https://lms.flipedu.net/api/branch/words", {
+        method: "POST",
+        headers: lms,
         body: JSON.stringify(wordForms),
       });
+      if (!wordsRes.ok) {
+        wordsRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/words", {
+          method: "POST",
+          headers: editor,
+          body: JSON.stringify(wordForms),
+        });
+      }
+      if (!wordsRes.ok) {
+        wordsRes = await fetch("https://dev.mstr.flipedu.net/api/branch/words", {
+          method: "POST",
+          headers: lms,
+          body: JSON.stringify(wordForms),
+        });
+      }
       if (!wordsRes.ok) {
         const errText = await wordsRes.text();
         return res.status(wordsRes.status).json({ message: `단어 생성 실패: ${errText.slice(0, 300)}` });
       }
       const createdWordsRaw = await wordsRes.json();
       const createdWords = Array.isArray(createdWordsRaw) ? createdWordsRaw : extractList(createdWordsRaw);
-      const contents = createdWords.map((word: any, index: number) => {
+      const words = createdWords.map((word: any, index: number) => {
         const firstMeaning = Array.isArray(word.meanings) ? word.meanings[0] : null;
         return {
           ordering: index,
-          id: word.id ?? word.wordNo,
-          descriptionId: firstMeaning?.id ? [firstMeaning.id] : [],
+          wordNo: word.wordNo ?? word.id,
+          correctDescriptionNos: firstMeaning?.descriptionNo ? [firstMeaning.descriptionNo] : [],
+          choseExampleNos: Array.isArray(word.examples)
+            ? word.examples.map((example: any) => example.exampleNo).filter(Boolean)
+            : [],
         };
-      });
+      }).filter((word: any) => word.wordNo && word.correctDescriptionNos.length > 0);
+      if (words.length === 0) return res.status(500).json({ message: "word creation returned empty result" });
       const vocabularyBody: any = {
         name: input.title,
-        subjectGroupName: "eng",
-        type: "WORD_PAPER",
+        type: "DIAGNOSIS",
         isShared: true,
-        contents,
+        isSharedBranches: false,
+        korObjCnt: words.length,
+        engObjCnt: words.length,
+        engSubCnt: words.length,
+        passValue: 80,
+        timeoutMinutes: 0,
+        retryMaxCnt: 0,
+        isReset: false,
+        isSelfGrading: false,
+        isSendResult: false,
+        words,
       };
-      if (input.categoryId) vocabularyBody.classifyId = input.categoryId;
-      const paperRes = await fetch("https://dev.flipedu.net/api/v2/vocabularies", {
+      if (input.categoryId) vocabularyBody.classifyNo = input.categoryId;
+      let paperRes = await fetch("https://lms.flipedu.net/api/branch/word-paper", {
         method: "POST",
-        headers: editor,
+        headers: lms,
         body: JSON.stringify(vocabularyBody),
       });
+      if (!paperRes.ok) {
+        paperRes = await fetch("https://dev.lms.flipedu.net/api/flipedu/branch/word-paper", {
+          method: "POST",
+          headers: editor,
+          body: JSON.stringify(vocabularyBody),
+        });
+      }
+      if (!paperRes.ok) {
+        paperRes = await fetch("https://dev.mstr.flipedu.net/api/branch/word-paper", {
+          method: "POST",
+          headers: lms,
+          body: JSON.stringify(vocabularyBody),
+        });
+      }
       if (!paperRes.ok) {
         const errText = await paperRes.text();
         return res.status(paperRes.status).json({ message: `단어 자료 생성 실패: ${errText.slice(0, 300)}` });
@@ -1739,12 +2087,24 @@ export async function registerRoutes(
   app.delete(api.wordPapers.delete.path, async (req, res) => {
     try {
       if (!req.session.username) return res.status(401).json({ message: "인증이 필요합니다." });
-      const { editor } = getAuthHeaders(req.session);
+      const { lms, editor } = getAuthHeaders(req.session);
       const vocabularyNo = req.params.vocabularyNo;
-      const delRes = await fetch(`https://dev.flipedu.net/api/v2/vocabularies/${vocabularyNo}`, {
+      let delRes = await fetch(`https://lms.flipedu.net/api/branch/word-papers?paperNos=${encodeURIComponent(vocabularyNo)}`, {
         method: "DELETE",
-        headers: editor,
+        headers: lms,
       });
+      if (!delRes.ok) {
+        delRes = await fetch(`https://dev.lms.flipedu.net/api/flipedu/branch/word-papers?paperNos=${encodeURIComponent(vocabularyNo)}`, {
+          method: "DELETE",
+          headers: editor,
+        });
+      }
+      if (!delRes.ok) {
+        delRes = await fetch(`https://dev.mstr.flipedu.net/api/branch/word-papers?paperNos=${encodeURIComponent(vocabularyNo)}`, {
+          method: "DELETE",
+          headers: lms,
+        });
+      }
       if (!delRes.ok) {
         const errText = await delRes.text();
         return res.status(delRes.status).json({ message: `단어 자료 삭제 실패: ${errText.slice(0, 300)}` });
@@ -1804,16 +2164,34 @@ export async function registerRoutes(
     const { lms, editor } = getAuthHeaders(session);
     const query = buildQuestionSubjectQuery(subjectGroup, options?.parentNo, options?.isInContents);
     const suffix = options?.allDepth === false ? "" : "/all";
-    const result = await tryFlipEndpoints([
+    // Order matters: the branch-scoped endpoint answers 200 but with an EMPTY
+    // list for many accounts, so a "first 200 wins" strategy returns nothing.
+    // The non-branch endpoint (mirrors the real editor app) actually has data.
+    // Try each in order and keep the first NON-EMPTY result.
+    const endpoints = [
       { url: `https://lms.flipedu.net/api/branch/question/subjects${suffix}?${query}`, headers: lms },
+      { url: `https://lms.flipedu.net/api/question/subjects${suffix}?${query}`, headers: lms },
       { url: `https://dev.lms.flipedu.net/api/flipedu/branch/question/subjects${suffix}?${query}`, headers: editor },
       { url: `https://dev.lms.flipedu.net/api/flipedu/question/subjects${suffix}?${query}`, headers: editor },
       { url: `https://dev.flipedu.net/api/v2/question/subjects${suffix}?${query}`, headers: editor },
       { url: `https://dev.mstr.flipedu.net/api/branch/question/subjects${suffix}?${query}`, headers: lms },
-    ]);
+    ];
 
-    if (!result) return [];
-    return extractQuestionSubjectList(result.data);
+    let fallback: any[] = [];
+    for (const ep of endpoints) {
+      try {
+        const r = await fetch(ep.url, { headers: ep.headers, redirect: "follow" });
+        console.log(`[SUBJECTS] GET ${ep.url} → ${r.status}`);
+        if (!r.ok) continue;
+        const data = await r.json().catch(() => null);
+        const list = extractQuestionSubjectList(data);
+        if (list.length > 0) return list;
+        if (fallback.length === 0) fallback = list; // remember a valid-but-empty response
+      } catch (e) {
+        console.log(`[SUBJECTS] fetch failed ${ep.url}:`, e);
+      }
+    }
+    return fallback;
   };
 
   app.get(api.questionSubjects.list.path, async (req, res) => {
@@ -2626,10 +3004,21 @@ export async function registerRoutes(
 
     const prompt = `${titleLine}아래 카테고리 목록과 분류 원칙에 따라 JSON으로만 응답하세요.
 
+[카테고리 경로 구조]
+각 카테고리는 "영역 > 내용유형 > 말단" 형태의 경로입니다.
+- 영역(1뎁스): 듣기 / 독해 등 문제 형식
+- 내용유형(중간뎁스): 그림내용, 주제·목적, 내용일치, 어법·어휘, 빈칸추론 등
+- 말단(leaf, 마지막 뎁스): 학년 또는 유형 (예: 중1, 중2, 고1, "." 등)
+
 [분류 원칙]
-1. 2뎁스(내용유형) 먼저 결정: 각 문제의 [질문] 텍스트를 보고 내용유형(주제/목적, 내용일치, 어법·어휘, 빈칸 추론 등)을 선택하세요. 듣기·독해 구분도 [질문]으로 판단하세요. 예: "다음을 듣고" → 듣기 영역.
-2. 3뎁스(소분류) 결정: 학습지 제목과 전체 문제 흐름을 보고 "${depth3List}" 중 이 학습지 전체에 통일 적용할 소분류 하나를 고르세요. 제목에 "중1", "고2" 등이 있으면 그것을, 제목에 "모의고사"가 있으면 "모의고사"를, 특정 학년이나 시험 유형이 없으면 "."을 선택하세요.
-3. 최종 카테고리 선택: 결정한 내용유형(2뎁스) + 통일된 소분류(3뎁스)가 포함된 카테고리 번호를 고르세요.
+1. 영역(1뎁스) 결정 — 각 문제의 [질문] 텍스트로 판단. "다음을 듣고", "대화를 듣고" 등 → 듣기. 그 외 지문 기반 → 독해.
+2. 내용유형(중간뎁스) 결정 — 각 문제의 [질문]·[지문] 내용으로 가장 알맞은 유형을 선택.
+3. 말단(leaf) = 학년: [학습지 제목]에서 학년을 추출해 이 학습지 "전체에 동일하게" 적용하세요.
+   - 제목에 "중1/중2/중3/고1/고2/고3"이 있으면(예: "중1 모의고사", "중1로 시작") 그 학년을 말단으로 사용. "모의고사"라는 단어 자체는 말단이 아니며, 학년이 말단입니다. 예) "중1 모의고사" → 듣기 > 그림내용 > 중1.
+   - 추출한 학년이 아래 말단 후보 "${depth3List}"에 없으면 "."을 말단으로 사용.
+   - 제목에 학년 표기가 전혀 없으면 "."을 사용.
+   - 한 학습지의 모든 문제는 반드시 같은 말단(학년)을 가져야 합니다.
+4. 최종 선택: 문제별로 (1)영역 + (2)내용유형 + (3)통일된 말단 이 모두 일치하는 카테고리 번호를 고르세요.
 
 [카테고리 목록 (번호: 전체경로)]
 ${candidateList}
@@ -2637,11 +3026,11 @@ ${candidateList}
 [문제 목록]
 ${questionLines}
 
-응답 형식 (JSON 객체, 설명 없음):
-{"depth3":"선택한소분류","results":[{"id":"문제ID","idx":카테고리번호},...]}`;
+응답 형식 (JSON 객체, 설명 없음). depth3에는 3번에서 정한 통일된 말단(학년 또는 ".")을 넣으세요:
+{"depth3":"통일된말단","results":[{"id":"문제ID","idx":카테고리번호},...]}`;
 
     // Try multiple models in order — stop at first success
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
+    const models = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
 
     const generateWithFallback = async (): Promise<string> => {
       let lastErr: any;
@@ -2787,7 +3176,7 @@ ${count}개의 유사 문제를 다음 JSON 형식으로만 반환하세요. 설
   }
 ]`;
 
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
+    const models = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
     let lastErr: any;
     for (const modelName of models) {
       try {
@@ -2844,7 +3233,7 @@ ${count}개의 유사 문제를 다음 JSON 형식으로만 반환하세요. 설
 - 이미지에 문제가 없으면 빈 배열 []을 반환하세요
 - JSON만 반환하고 다른 설명은 하지 마세요`;
 
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"];
+    const models = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
 
     let lastErr: any;
     for (const modelName of models) {

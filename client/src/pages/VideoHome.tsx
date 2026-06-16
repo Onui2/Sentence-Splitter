@@ -38,6 +38,9 @@ export default function VideoHome() {
   const isMobile = useIsMobile();
   const [mobileCatOpen, setMobileCatOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSearch, setImportSearch] = useState("");
+  const [importingVideoNo, setImportingVideoNo] = useState<string | number | null>(null);
 
   const { data: flipCategories, isLoading: categoriesLoading } = useQuery({
     queryKey: [api.videoCategories.list.path],
@@ -59,6 +62,18 @@ export default function VideoHome() {
       if (search.trim()) url += `&integrateSearch=${encodeURIComponent(search.trim())}`;
       const res = await fetch(url);
       if (!res.ok) return { contents: [], totalElementsCnt: 0, totalPages: 0, page: 0, size: 20, elementsCntOfPage: 0 };
+      return res.json();
+    }
+  });
+
+  const { data: videoDbData, isLoading: videoDbLoading } = useQuery({
+    queryKey: [api.videoDb.list.path, importSearch],
+    enabled: importOpen,
+    queryFn: async () => {
+      let url = `${api.videoDb.list.path}?page=0&size=50`;
+      if (importSearch.trim()) url += `&integrateSearch=${encodeURIComponent(importSearch.trim())}`;
+      const res = await fetch(url);
+      if (!res.ok) return { contents: [] };
       return res.json();
     }
   });
@@ -99,6 +114,26 @@ export default function VideoHome() {
   const addInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const [deleteCatTarget, setDeleteCatTarget] = useState<{ classifyNo: string; name: string } | null>(null);
+
+  const importVideo = async (videoNo: string | number) => {
+    setImportingVideoNo(videoNo);
+    try {
+      const res = await fetch(api.videoDb.import.path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoNo, categoryId: categoryId ? Number(categoryId) : undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "영상 가져오기 실패");
+      toast({ title: "가져오기 완료", description: "나만의 영상에 추가했습니다." });
+      queryClient.invalidateQueries({ queryKey: [api.videos.list.path] });
+      setImportOpen(false);
+    } catch (err: any) {
+      toast({ title: "가져오기 실패", description: err?.message || "영상을 가져오지 못했습니다.", variant: "destructive" });
+    } finally {
+      setImportingVideoNo(null);
+    }
+  };
 
   useEffect(() => {
     if (addingRoot || addingUnder) addInputRef.current?.focus();
@@ -437,6 +472,14 @@ export default function VideoHome() {
             >
               영상 만들기
             </Button>
+            <Button
+              variant="outline"
+              className="h-9 px-4 text-[13px] bg-white"
+              onClick={() => setImportOpen(true)}
+              data-testid="btn-import-video-db"
+            >
+              영플립DB에서 가져오기
+            </Button>
           </div>
 
           <div className="flex items-center justify-between gap-2">
@@ -538,6 +581,68 @@ export default function VideoHome() {
         onClose={() => setCreateModalOpen(false)}
         defaultCategoryId={categoryId}
       />
+
+      {importOpen && (() => {
+        const dbVideos = Array.isArray(videoDbData) ? videoDbData : (videoDbData?.contents || videoDbData?.content || videoDbData?.data || []);
+        const getVideoNo = (v: any) => v.videoNo ?? v.no ?? v.id;
+        return (
+          <div className="fixed inset-0 z-[70] bg-black/45 flex items-center justify-center p-6" data-testid="video-db-import-modal">
+            <div className="w-[min(92vw,900px)] h-[min(82vh,680px)] bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col">
+              <div className="h-14 px-5 border-b border-gray-200 flex items-center justify-between shrink-0">
+                <h2 className="text-[18px] font-bold text-gray-900">영플립DB 영상 가져오기</h2>
+                <button className="p-2 text-gray-500 hover:text-gray-900" onClick={() => setImportOpen(false)}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4 border-b border-gray-100 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    className="h-10 pl-9 text-[13px]"
+                    placeholder="영상 제목 검색"
+                    value={importSearch}
+                    onChange={(e) => setImportSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                {videoDbLoading ? (
+                  <div className="space-y-2">{Array(8).fill(0).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+                ) : dbVideos.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-[13px] text-gray-500">영플립DB 영상이 없습니다.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {dbVideos.map((video: any, idx: number) => {
+                      const videoNo = getVideoNo(video);
+                      const title = video.title || video.name || video.subject || `영상 ${idx + 1}`;
+                      return (
+                        <div key={videoNo || idx} className="border border-gray-200 rounded-md p-3 flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[14px] font-medium text-gray-900 truncate">{title}</div>
+                            <div className="text-[12px] text-gray-500 mt-1 truncate">
+                              {video.classify?.name || video.category?.name || video.writer?.name || video.createdAt || "-"}
+                            </div>
+                          </div>
+                          <Button
+                            className="h-8 px-3 bg-blue-600 hover:bg-blue-700 text-[12px]"
+                            disabled={!videoNo || importingVideoNo === videoNo}
+                            onClick={() => importVideo(videoNo)}
+                          >
+                            {importingVideoNo === videoNo ? "가져오는 중" : "가져오기"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="h-14 px-4 border-t border-gray-200 flex items-center justify-end shrink-0">
+                <Button variant="outline" className="h-9 px-5" onClick={() => setImportOpen(false)}>닫기</Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
