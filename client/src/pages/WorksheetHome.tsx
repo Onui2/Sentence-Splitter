@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Search, ChevronDown, ChevronRight, X, Pencil, Trash2, Plus, Check, Menu, Sparkles, Save, Tag, Copy, FileText } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, X, Pencil, Trash2, Plus, Check, Menu, Sparkles, Save, Tag, Copy, FileText, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,7 @@ export default function WorksheetHome() {
   const isMobile = useIsMobile();
   const [mobileCatOpen, setMobileCatOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createInitData, setCreateInitData] = useState<WorksheetEditInitData | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editPaperNo, setEditPaperNo] = useState<number | null>(null);
   const [editInitData, setEditInitData] = useState<WorksheetEditInitData | null>(null);
@@ -60,6 +61,17 @@ export default function WorksheetHome() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{ paperNo: number; name: string } | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [combineOpen, setCombineOpen] = useState(false);
+  const [combineSource, setCombineSource] = useState<"mine" | "db">("mine");
+  const [combineCategoryId, setCombineCategoryId] = useState<string | null>(categoryId);
+  const [combineCategorySearch, setCombineCategorySearch] = useState("");
+  const [combinePaperSearch, setCombinePaperSearch] = useState("");
+  const [combineSelectedPaperNo, setCombineSelectedPaperNo] = useState<number | null>(null);
+  const [combineAddedQuestions, setCombineAddedQuestions] = useState<QuestionItem[]>([]);
+  const [combineTitle, setCombineTitle] = useState("");
+  const [combineTargetCategoryId, setCombineTargetCategoryId] = useState<string>("");
+  const [combineShowExplanation, setCombineShowExplanation] = useState(false);
+  const [combineExpandedNodes, setCombineExpandedNodes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -84,6 +96,42 @@ export default function WorksheetHome() {
       if (debouncedSearch.trim()) url += `&integrateSearch=${encodeURIComponent(debouncedSearch.trim())}`;
       const res = await fetch(url);
       if (!res.ok) return { contents: [], totalElementsCnt: 0, totalPages: 0, page: 0, size: 20, elementsCntOfPage: 0 };
+      return res.json();
+    }
+  });
+
+  const { data: questionPaperDbCategories } = useQuery({
+    queryKey: [api.questionPaperDbCategories.list.path],
+    enabled: combineOpen && combineSource === "db",
+    queryFn: async () => {
+      const res = await fetch(api.questionPaperDbCategories.list.path);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data?.content ?? data?.contents ?? data?.data ?? []);
+    }
+  });
+
+  const { data: combinePapersData, isLoading: combinePapersLoading } = useQuery({
+    queryKey: ["combine-question-papers", combineOpen, combineSource, combineCategoryId, combinePaperSearch],
+    enabled: combineOpen,
+    queryFn: async () => {
+      const basePath = combineSource === "db" ? api.questionPaperDb.list.path : api.questionPapers.list.path;
+      let url = `${basePath}?page=0&size=50`;
+      if (combineCategoryId) url += `&classifyNo=${combineCategoryId}`;
+      if (combinePaperSearch.trim()) url += `&integrateSearch=${encodeURIComponent(combinePaperSearch.trim())}`;
+      const res = await fetch(url);
+      if (!res.ok) return { contents: [], totalElementsCnt: 0 };
+      return res.json();
+    }
+  });
+
+  const { data: combinePaperDetail, isLoading: combinePaperLoading } = useQuery({
+    queryKey: ["combine-question-paper-detail", combineSource, combineSelectedPaperNo],
+    enabled: combineOpen && !!combineSelectedPaperNo,
+    queryFn: async () => {
+      const detailPath = combineSource === "db" ? api.questionPaperDb.detail.path : api.questionPapers.detail.path;
+      const res = await fetch(buildUrl(detailPath, { paperNo: combineSelectedPaperNo! }));
+      if (!res.ok) throw new Error("학습지를 불러오지 못했습니다.");
       return res.json();
     }
   });
@@ -281,6 +329,15 @@ export default function WorksheetHome() {
     setSelectedIds([]);
     if (selectedPaperNo && selectedIds.includes(selectedPaperNo)) { setSelectedPaperNo(null); setEditedSubjects({}); }
     toast({ title: `${successCount}개 삭제 완료`, description: selectedIds.length > successCount ? `${selectedIds.length - successCount}개는 실패했습니다.` : undefined });
+  };
+
+  const handleCombineSelected = async () => {
+    setCombineCategoryId(categoryId);
+    setCombineTargetCategoryId(categoryId || "");
+    setCombineSelectedPaperNo(selectedPaperNo);
+    setCombineAddedQuestions([]);
+    setCombineTitle("");
+    setCombineOpen(true);
   };
 
   // Paper detail query
@@ -607,9 +664,17 @@ export default function WorksheetHome() {
         explanationExistingMedia,
       };
     });
+    // Detail response carries `classifys` as a nested tree (root → ... → leaf);
+    // the deepest leaf is the paper's actual category.
+    const deepestLeaf = (node: any): number | undefined => {
+      if (!node || typeof node !== "object") return undefined;
+      const kids = Array.isArray(node.children) ? node.children : [];
+      if (kids.length === 0) return node.classifyNo ?? undefined;
+      return deepestLeaf(kids[0]) ?? node.classifyNo ?? undefined;
+    };
     return {
       title: paper.name || "",
-      categoryId: paper.classifyNo ?? paper.classify?.classifyNo ?? paper.category?.classifyNo ?? undefined,
+      categoryId: paper.classifyNo ?? deepestLeaf(paper.classifys) ?? paper.classify?.classifyNo ?? paper.category?.classifyNo ?? undefined,
       questions: qs,
     };
   };
@@ -711,7 +776,7 @@ export default function WorksheetHome() {
         });
         const res = await fetch(api.ai.classifySubject.path, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questions: questionsPayload, candidates }),
+          body: JSON.stringify({ questions: questionsPayload, candidates, paperTitle: paperDetail?.name ?? "" }),
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
@@ -949,6 +1014,53 @@ export default function WorksheetHome() {
     );
   };
 
+  const flatCategoryOptions = (nodes: any[] = [], depth = 0): { id: string; name: string }[] => {
+    const rows: { id: string; name: string }[] = [];
+    for (const node of nodes || []) {
+      rows.push({ id: String(node.classifyNo), name: `${"  ".repeat(depth)}${node.name}` });
+      if (node.children?.length) rows.push(...flatCategoryOptions(node.children, depth + 1));
+    }
+    return rows;
+  };
+
+  const renderCombineCategories = (nodes: any[] = [], depth = 0): any => {
+    const keyword = combineCategorySearch.trim().toLowerCase();
+    return (
+      <div className={depth > 0 ? "ml-4" : ""}>
+        {nodes.map((cat: any) => {
+          const hasChildren = cat.children && cat.children.length > 0;
+          const isExpanded = combineExpandedNodes.has(String(cat.classifyNo));
+          const isSelected = combineCategoryId === String(cat.classifyNo);
+          const visibleBySearch = !keyword || String(cat.name || "").toLowerCase().includes(keyword);
+          const childHasMatch = hasChildren && JSON.stringify(cat.children).toLowerCase().includes(keyword);
+          if (keyword && !visibleBySearch && !childHasMatch) return null;
+          return (
+            <div key={cat.classifyNo}>
+              <button
+                type="button"
+                className={`w-full flex items-center gap-1 px-3 py-2 text-[13px] border-b border-gray-100 text-left ${isSelected ? "bg-blue-50 text-blue-600 font-semibold border-l-2 border-l-blue-600" : "text-gray-700 hover:bg-gray-50"}`}
+                onClick={() => {
+                  setCombineCategoryId(prev => prev === String(cat.classifyNo) ? null : String(cat.classifyNo));
+                  if (hasChildren) {
+                    setCombineExpandedNodes(prev => {
+                      const next = new Set(prev);
+                      next.has(String(cat.classifyNo)) ? next.delete(String(cat.classifyNo)) : next.add(String(cat.classifyNo));
+                      return next;
+                    });
+                  }
+                }}
+              >
+                {hasChildren ? (isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />) : <span className="w-3.5" />}
+                <span className="truncate">{cat.name}</span>
+              </button>
+              {hasChildren && (isExpanded || keyword) && renderCombineCategories(cat.children, depth + 1)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const categorySidebarContent = (
     <>
       <div className="p-4">
@@ -1021,7 +1133,7 @@ export default function WorksheetHome() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="p-4 md:p-6 space-y-4 md:space-y-6 overflow-y-auto flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isMobile && (
               <Button
                 variant="outline"
@@ -1040,20 +1152,39 @@ export default function WorksheetHome() {
             >
               학습지 만들기
             </Button>
+            <Button variant="outline" className="h-9 px-4 text-[13px] text-gray-600 bg-white" onClick={() => toast({ title: "준비 중입니다." })}>
+              출제
+            </Button>
+            <Button variant="outline" className="h-9 px-4 text-[13px] text-gray-600 bg-white" onClick={handleCombineSelected}>
+              학습지조합하기
+            </Button>
+            <Button variant="outline" className="h-9 px-4 text-[13px] text-gray-600 bg-white" onClick={() => toast({ title: "준비 중입니다." })}>
+              카테고리 이동
+            </Button>
+            <Button 
+              variant="outline" 
+              className="h-9 px-4 text-[13px] text-gray-600 bg-white" 
+              disabled={selectedIds.length === 0} 
+              onClick={() => setBatchDeleteOpen(true)}
+            >
+              삭제
+            </Button>
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <div className="relative flex-1 md:flex-none md:w-96">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <div className="relative flex-1 md:flex-none md:w-[400px] flex">
               <Input
-                placeholder="학습지 검색"
-                className="pl-10 bg-muted border-none rounded-md h-10 text-[13px] focus-visible:ring-1 focus-visible:ring-border"
+                placeholder="학습지 이름, 담당자 검색"
+                className="bg-white border-gray-200 rounded-r-none rounded-l-md h-10 text-[13px] focus-visible:ring-1 focus-visible:ring-blue-500 w-full shadow-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 data-testid="input-worksheet-search"
               />
+              <Button className="h-10 px-4 rounded-l-none rounded-r-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm shrink-0">
+                <Search className="w-4 h-4" />
+              </Button>
             </div>
-            <div className="px-3 py-1 bg-muted rounded text-[11px] text-muted-foreground shrink-0" data-testid="text-worksheet-total-count">
+            <div className="px-3 py-1 font-medium text-[13px] text-gray-700 shrink-0" data-testid="text-worksheet-total-count">
               총 {papersData?.totalElementsCnt || 0}개
             </div>
           </div>
@@ -1061,10 +1192,7 @@ export default function WorksheetHome() {
           {selectedIds.length > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-[12px]">
               <span className="text-blue-700 font-medium">{selectedIds.length}개 선택됨</span>
-              <button className="ml-auto text-destructive hover:text-destructive/80 flex items-center gap-1 font-medium" onClick={() => setBatchDeleteOpen(true)} data-testid="btn-batch-delete">
-                <Trash2 className="w-3.5 h-3.5" /> 선택 삭제
-              </button>
-              <button className="text-muted-foreground hover:text-foreground" onClick={() => setSelectedIds([])} data-testid="btn-deselect-all">취소</button>
+              <button className="ml-auto text-muted-foreground hover:text-foreground" onClick={() => setSelectedIds([])} data-testid="btn-deselect-all">취소</button>
             </div>
           )}
 
@@ -1084,14 +1212,23 @@ export default function WorksheetHome() {
                       data-testid="checkbox-worksheet-select-all"
                     />
                   </TableHead>
-                  <TableHead className="text-muted-foreground font-medium text-[12px] h-10 border-r border-border/30">
-                    <div className="flex items-center px-1">학습지</div>
+                  <TableHead className="text-gray-700 font-bold text-[13px] h-11 border-r border-border/30 bg-gray-50">
+                    <div className="flex items-center gap-1 px-1">학습지 이름 <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" /></div>
                   </TableHead>
-                  <TableHead className="w-[72px] px-2 text-center text-muted-foreground font-medium text-[12px] h-10 whitespace-nowrap hidden md:table-cell border-r border-border/30">
-                    문항수
+                  <TableHead className="text-gray-700 font-bold text-[13px] h-11 border-r border-border/30 bg-gray-50 whitespace-nowrap px-3 hidden md:table-cell">
+                    <div className="flex items-center gap-1 justify-center">카테고리 <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" /></div>
                   </TableHead>
-                  <TableHead className="w-24 text-muted-foreground font-medium text-[12px] h-10 hidden md:table-cell px-3">
-                    수정일
+                  <TableHead className="w-24 px-2 text-center text-gray-700 font-bold text-[13px] h-11 whitespace-nowrap hidden md:table-cell border-r border-border/30 bg-gray-50">
+                    <div className="flex items-center gap-1 justify-center">문항수 <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" /></div>
+                  </TableHead>
+                  <TableHead className="w-24 px-2 text-center text-gray-700 font-bold text-[13px] h-11 whitespace-nowrap hidden md:table-cell border-r border-border/30 bg-gray-50">
+                    <div className="flex items-center gap-1 justify-center">점수 <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" /></div>
+                  </TableHead>
+                  <TableHead className="w-28 text-center text-gray-700 font-bold text-[13px] h-11 hidden md:table-cell px-3 border-r border-border/30 bg-gray-50">
+                    <div className="flex items-center gap-1 justify-center">수정일 <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" /></div>
+                  </TableHead>
+                  <TableHead className="w-24 text-center text-gray-700 font-bold text-[13px] h-11 hidden md:table-cell px-3 bg-gray-50">
+                    <div className="flex items-center gap-1 justify-center">담당자 <ChevronsUpDown className="w-3.5 h-3.5 text-gray-400" /></div>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -1101,13 +1238,16 @@ export default function WorksheetHome() {
                     <TableRow key={i}>
                       <TableCell className="px-3"><Skeleton className="h-4 w-4" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-48" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24 mx-auto" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-20 mx-auto" /></TableCell>
                       <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-8 mx-auto" /></TableCell>
-                      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
                     </TableRow>
                   ))
                 ) : !papersData?.contents?.length ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="py-16">
+                    <TableCell colSpan={7} className="py-16">
                       <div className="flex flex-col items-center gap-3 text-center">
                         <FileText className="w-10 h-10 text-muted-foreground/40" />
                         <p className="text-[13px] text-muted-foreground">
@@ -1151,7 +1291,7 @@ export default function WorksheetHome() {
                       </TableCell>
                       <TableCell className="text-[13px] border-r border-border/30 max-w-0 overflow-hidden">
                         <div className="flex items-center justify-between gap-2 min-w-0">
-                          <span className="truncate">{paper.name}</span>
+                          <span className="truncate text-gray-800 font-medium">{paper.name}</span>
                           <button
                             className="shrink-0 p-1 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                             onClick={e => { e.stopPropagation(); setDeleteTarget({ paperNo: paper.questionPaperNo, name: paper.name }); }}
@@ -1166,11 +1306,26 @@ export default function WorksheetHome() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-center text-[13px] text-muted-foreground hidden md:table-cell border-r border-border/30">
-                        {paper.questionCnt || 0}
+                      <TableCell className="text-center text-[13px] text-gray-600 border-r border-border/30 hidden md:table-cell">
+                        {(() => {
+                          const c = paper.classify;
+                          const path = typeof c === "string" ? c : (c?.name || paper.category?.name || "");
+                          if (!path) return "-";
+                          const leaf = path.split(">").pop()?.trim() || path;
+                          return <span title={path}>{leaf}</span>;
+                        })()}
                       </TableCell>
-                      <TableCell className="text-[12px] text-muted-foreground hidden md:table-cell px-3">
+                      <TableCell className="text-center text-[13px] text-gray-600 hidden md:table-cell border-r border-border/30">
+                        {paper.questionCnt || 0}개
+                      </TableCell>
+                      <TableCell className="text-center text-[13px] text-gray-600 hidden md:table-cell border-r border-border/30">
+                        {paper.totalPoint != null ? `${paper.totalPoint}점` : "-"}
+                      </TableCell>
+                      <TableCell className="text-center text-[12px] text-gray-600 hidden md:table-cell px-3 border-r border-border/30">
                         {formatDate(paper.writeInfo?.updatedAt || paper.writeInfo?.createdAt)}
+                      </TableCell>
+                      <TableCell className="text-center text-[13px] text-gray-600 hidden md:table-cell px-3">
+                        {paper.writeInfo?.createdByNm || paper.writeInfo?.updatedByNm || "-"}
                       </TableCell>
                     </TableRow>
                   ))
@@ -1277,10 +1432,223 @@ export default function WorksheetHome() {
       </AlertDialog>
 
 
+      {combineOpen && (() => {
+        const rawQuestions = combinePaperDetail
+          ? (Array.isArray(combinePaperDetail.questions) ? combinePaperDetail.questions : Array.isArray(combinePaperDetail.shadowings) ? combinePaperDetail.shadowings : [])
+          : [];
+        const currentInit = combinePaperDetail ? paperToEditInitData(combinePaperDetail, rawQuestions) : null;
+        const currentQuestions = currentInit?.questions || [];
+        const combineCategories = combineSource === "db" ? (questionPaperDbCategories || []) : (flipCategories || []);
+        const categoryOptions = flatCategoryOptions(flipCategories || []);
+        const addQuestion = (q: QuestionItem) => {
+          setCombineAddedQuestions(prev => [...prev, { ...q, id: Math.random().toString(36).substring(2, 9) }]);
+        };
+        const addAllQuestions = () => {
+          setCombineAddedQuestions(prev => [
+            ...prev,
+            ...currentQuestions.map(q => ({ ...q, id: Math.random().toString(36).substring(2, 9) })),
+          ]);
+        };
+        const createCombinedWorksheet = () => {
+          if (combineAddedQuestions.length === 0) {
+            toast({ title: "문항을 담아주세요.", description: "왼쪽 문항 목록에서 담기를 눌러주세요." });
+            return;
+          }
+          setCreateInitData({
+            title: combineTitle.trim() || "조합 학습지",
+            categoryId: combineTargetCategoryId ? Number(combineTargetCategoryId) : undefined,
+            questions: combineAddedQuestions,
+          });
+          setCombineOpen(false);
+          setCreateModalOpen(true);
+        };
+        return (
+          <div className="fixed inset-0 z-[80] bg-black/45 flex items-center justify-center p-6" data-testid="worksheet-combine-modal">
+            <div
+              className="w-[92vw] max-w-[1766px] bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col"
+              style={{ height: "calc(100vh - 50px)" }}
+            >
+            <div className="h-16 px-[30px] flex items-center justify-between border-b border-gray-200 shrink-0">
+              <h2 className="text-[20px] font-bold text-gray-900">학습지 조합하기</h2>
+              <button type="button" className="p-2 text-gray-500 hover:text-gray-900" onClick={() => setCombineOpen(false)} data-testid="btn-close-combine" aria-label="닫기">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 grid grid-cols-[minmax(320px,30%)_minmax(380px,1fr)_minmax(360px,34%)] overflow-hidden">
+              <div className="border-r border-gray-200 flex flex-col min-w-0 min-h-0">
+                <div className="grid grid-cols-2 px-8 py-3">
+                  <button type="button" className={`h-10 rounded-l-md border text-[14px] font-semibold ${combineSource === "mine" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200"}`} onClick={() => { setCombineSource("mine"); setCombineCategoryId(categoryId); setCombineSelectedPaperNo(null); }}>나만의 학습지</button>
+                  <button type="button" className={`h-10 rounded-r-md border text-[14px] font-semibold ${combineSource === "db" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200"}`} onClick={() => { setCombineSource("db"); setCombineCategoryId(null); setCombineSelectedPaperNo(null); }}>학습지DB</button>
+                </div>
+                <div className="flex-1 min-h-0 grid grid-cols-2 border-t border-gray-100">
+                  <div className="border-r border-gray-200 flex flex-col min-w-0">
+                    <div className="px-3 py-3 border-b border-gray-100">
+                      <div className="text-[14px] font-semibold mb-2">카테고리</div>
+                      <div className="flex">
+                        <Input className="h-8 rounded-r-none text-[13px]" placeholder="카테고리 검색" value={combineCategorySearch} onChange={(e) => setCombineCategorySearch(e.target.value)} />
+                        <Button className="h-8 w-9 rounded-l-none px-0 bg-blue-600 hover:bg-blue-700"><Search className="w-4 h-4" /></Button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      <button type="button" className={`w-full text-left px-3 py-2 text-[13px] border-b border-gray-100 ${!combineCategoryId ? "bg-blue-50 text-blue-600 font-semibold border-l-2 border-l-blue-600" : "text-gray-700 hover:bg-gray-50"}`} onClick={() => setCombineCategoryId(null)}>전체</button>
+                      {renderCombineCategories(combineCategories)}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col min-w-0">
+                    <div className="px-3 py-3 border-b border-gray-100">
+                      <div className="text-[14px] font-semibold mb-2">학습지 목록</div>
+                      <div className="flex">
+                        <Input className="h-8 rounded-r-none text-[13px]" placeholder="학습지 검색" value={combinePaperSearch} onChange={(e) => setCombinePaperSearch(e.target.value)} />
+                        <Button className="h-8 w-9 rounded-l-none px-0 bg-blue-600 hover:bg-blue-700"><Search className="w-4 h-4" /></Button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      {combinePapersLoading ? (
+                        <div className="p-4 space-y-2">{Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
+                      ) : !combinePapersData?.contents?.length ? (
+                        <div className="h-full flex items-center justify-center text-[13px] text-gray-500">학습지가 없습니다.</div>
+                      ) : (
+                        combinePapersData.contents.map((paper: any) => (
+                          <button key={paper.questionPaperNo} type="button" className={`w-full text-left px-3 py-2 border-b border-gray-100 text-[13px] hover:bg-gray-50 ${combineSelectedPaperNo === paper.questionPaperNo ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700"}`} onClick={() => setCombineSelectedPaperNo(paper.questionPaperNo)}>
+                            <div className="truncate">{paper.name}</div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">{paper.questionCnt || 0}문항</div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-r border-gray-200 flex flex-col min-w-0 min-h-0">
+                <div className="h-[62px] px-5 flex items-center justify-between shrink-0">
+                  <div className="min-w-0">
+                    <h3 className="text-[15px] font-semibold text-gray-800 truncate">{currentInit?.title || "학습지를 선택하세요"}</h3>
+                    {currentQuestions.length > 0 && <p className="text-[12px] text-gray-500 mt-1">총 {currentQuestions.length}문항</p>}
+                  </div>
+                  <label className="flex items-center gap-2 text-[13px] text-gray-600">
+                    해설 보기
+                    <button type="button" className={`w-9 h-5 rounded-full p-0.5 transition-colors ${combineShowExplanation ? "bg-blue-600" : "bg-gray-300"}`} onClick={() => setCombineShowExplanation(prev => !prev)}>
+                      <span className={`block w-4 h-4 rounded-full bg-white transition-transform ${combineShowExplanation ? "translate-x-4" : ""}`} />
+                    </button>
+                  </label>
+                </div>
+                <div className="px-5 py-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input className="h-9 pl-9 text-[13px]" placeholder="제목, 보기, 내용, 해설 검색" />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto px-5 pb-5">
+                  {!combineSelectedPaperNo ? (
+                    <div className="h-full flex items-center justify-center text-[14px] text-gray-600">왼쪽에서 학습지를 선택하면 문항을 확인할 수 있습니다.</div>
+                  ) : combinePaperLoading ? (
+                    <div className="space-y-3">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
+                  ) : currentQuestions.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-[14px] text-gray-500">문항이 없습니다.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between pb-2">
+                        <div className="text-[13px] text-gray-500 truncate">{currentInit?.title} · {currentQuestions.length}문항</div>
+                        <Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700" onClick={addAllQuestions}>전체 담기</Button>
+                      </div>
+                      {currentQuestions.map((q, idx) => (
+                        <div key={`${q.id}-${idx}`} className="border border-gray-200 rounded-lg p-4 bg-white">
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                              <span className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 text-[13px] font-bold flex items-center justify-center">{idx + 1}</span>
+                              <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-[12px]">문제유형: {q.questionType === "SHORT_ANSWER" ? "주관식" : "객관식"}</span>
+                              <span className="px-2 py-1 rounded bg-blue-50 text-blue-600 text-[12px]">정답유형: {q.questionType === "SHORT_ANSWER" ? "주관식" : "객관식"}</span>
+                              {q.subjectId && <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-[12px]">카테고리 {q.subjectId}</span>}
+                              <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 text-[12px]">{q.score || 1}점</span>
+                            </div>
+                            <Button variant="outline" size="sm" className="h-8 shrink-0 border-blue-200 text-blue-600 hover:bg-blue-50" onClick={() => addQuestion(q)}>
+                              <Plus className="w-4 h-4 mr-1" /> 담기
+                            </Button>
+                          </div>
+                          {q.body && <p className="text-[13px] text-gray-500 mb-2 whitespace-pre-wrap">{q.body}</p>}
+                          <p className="text-[15px] text-gray-900 font-medium mb-3 whitespace-pre-wrap">{q.question || "(문제 텍스트 없음)"}</p>
+                          {q.questionType === "CHOICE" && q.choices?.length > 0 && (
+                            <div className="space-y-2 mb-2">
+                              {q.choices.filter(choice => choice !== "").map((choice, choiceIdx) => {
+                                const isAnswer = q.correctAnswer === choiceIdx + 1;
+                                return (
+                                  <div key={`${q.id}-choice-${choiceIdx}`} className="flex items-start gap-2 text-[14px]">
+                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[13px] font-semibold ${isAnswer ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"}`}>{choiceIdx + 1}</span>
+                                    <span className="pt-1 text-gray-800">{choice}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {q.questionType === "SHORT_ANSWER" && q.answerText && (
+                            <div className="text-[13px] text-blue-700 bg-blue-50 rounded px-3 py-2 mb-2">정답: {q.answerText}</div>
+                          )}
+                          {combineShowExplanation && q.explanation && <p className="text-[13px] text-gray-700 bg-gray-50 rounded px-3 py-2 whitespace-pre-wrap">해설: {q.explanation}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col min-w-0 min-h-0">
+                <div className="h-[96px] px-4 py-2 border-b border-gray-200 shrink-0">
+                  <h3 className="text-[14px] font-semibold text-gray-800 mb-2">담은 문항 ({combineAddedQuestions.length}개)</h3>
+                  <Input className="h-8 text-[13px] mb-2" placeholder="새 학습지 제목 입력" value={combineTitle} onChange={(e) => setCombineTitle(e.target.value)} />
+                  <select className="w-full h-8 rounded-md border border-gray-200 bg-white px-3 text-[13px] text-gray-700 outline-none focus:border-blue-500" value={combineTargetCategoryId} onChange={(e) => setCombineTargetCategoryId(e.target.value)}>
+                    <option value="">카테고리 선택 (선택사항)</option>
+                    {categoryOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                  {combineAddedQuestions.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-center text-[14px] text-gray-600">문항 목록에서 "담기"를 눌러 문항을 추가하세요.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {combineAddedQuestions.map((q, idx) => (
+                        <div key={q.id} className="border border-gray-200 rounded-md p-3">
+                          <div className="flex items-start gap-2 mb-2">
+                            <span className="w-6 h-6 rounded bg-blue-50 text-blue-600 text-[12px] font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
+                            <p className="text-[13px] text-gray-900 font-medium line-clamp-3 flex-1">{q.question || "(문제 텍스트 없음)"}</p>
+                            <button type="button" className="text-gray-400 hover:text-red-500" onClick={() => setCombineAddedQuestions(prev => prev.filter(item => item.id !== q.id))}><X className="w-4 h-4" /></button>
+                          </div>
+                          {q.questionType === "CHOICE" && q.choices?.length > 0 && (
+                            <div className="ml-8 space-y-1">
+                              {q.choices.filter(choice => choice !== "").slice(0, 5).map((choice, choiceIdx) => (
+                                <div key={`${q.id}-picked-choice-${choiceIdx}`} className="flex items-start gap-1.5 text-[12px] text-gray-700">
+                                  <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[11px] ${q.correctAnswer === choiceIdx + 1 ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}>{choiceIdx + 1}</span>
+                                  <span className="line-clamp-1 pt-0.5">{choice}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {q.questionType === "SHORT_ANSWER" && q.answerText && (
+                            <div className="ml-8 text-[12px] text-blue-700 bg-blue-50 rounded px-2 py-1">정답: {q.answerText}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="h-[88px] border-t border-gray-200 px-4 flex items-center gap-3 shrink-0 bg-white">
+                  <Button variant="outline" className="h-10 flex-1 text-[15px]" onClick={() => setCombineOpen(false)}>취소</Button>
+                  <Button className="h-10 flex-1 bg-blue-600 hover:bg-blue-700 text-[15px] font-semibold" onClick={createCombinedWorksheet}>학습지 생성</Button>
+                </div>
+              </div>
+            </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <WorksheetCreateModal
         open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
+        onClose={() => { setCreateModalOpen(false); setCreateInitData(null); }}
         defaultCategoryId={categoryId}
+        initData={createInitData}
       />
       <WorksheetCreateModal
         open={editModalOpen}
