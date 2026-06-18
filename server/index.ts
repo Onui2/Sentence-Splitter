@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 
 const app = express();
+app.disable("x-powered-by");
 app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
@@ -23,12 +24,38 @@ declare module "express-serve-static-core" {
 // cookie-session sets session on req.session 
 // Types are similar to express-session for our usage
 
-const sessionSecret = process.env.SESSION_SECRET || "fallback_secret_for_vercel_deployments_if_missing";
+const DEVELOPMENT_SESSION_SECRET = "fallback_secret_for_vercel_deployments_if_missing";
+const MIN_SESSION_SECRET_LENGTH = 32;
+
+function isProductionLike() {
+  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+}
+
+function getSessionSecret() {
+  const secret = process.env.SESSION_SECRET?.trim();
+
+  if (secret && secret !== DEVELOPMENT_SESSION_SECRET && secret.length >= MIN_SESSION_SECRET_LENGTH) {
+    return secret;
+  }
+
+  if (isProductionLike()) {
+    throw new Error("SESSION_SECRET is required in production and must be at least 32 characters.");
+  }
+
+  return DEVELOPMENT_SESSION_SECRET;
+}
+
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
 
 app.use(
   cookieSession({
     name: "session",
-    keys: [sessionSecret],
+    keys: [getSessionSecret()],
     secure: process.env.NODE_ENV === "production",
     httpOnly: true,
     sameSite: "lax",
