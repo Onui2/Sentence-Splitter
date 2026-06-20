@@ -295,6 +295,7 @@ export default function Login() {
                     onClick={handleSearch}
                     disabled={isSearching}
                     data-testid="button-search-academy"
+                    aria-label="학원 검색"
                   >
                     {isSearching ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
